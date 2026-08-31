@@ -1,9 +1,15 @@
-# Ultima Industrial — Cash Flow Pipeline
+# Ultima Industrial — Reporting Pipelines
 
-Daily automated cash flow report: pulls the BluBanca transaction feed and
-open payables/receivables both from Odoo, categorizes transactions, and
-writes a register + category roll-up + upcoming list + forecast to a
-Google Sheet.
+Two independent daily jobs, both reading the same Odoo instance (read-only)
+and writing to the same Google Sheet, "Ultimate reporting":
+
+1. **Cash flow pipeline** (`main.py`) — a detailed, append-only transaction
+   register with running balance, category roll-up, upcoming payables/
+   receivables, and a simple forecast.
+2. **Executive report** (`main_exec.py`) — a daily snapshot overview for
+   leadership: a narrative summary, today-vs-yesterday key figures, sales
+   pipeline health (new orders, delayed orders, revenue trend), and finance
+   health (cash trend, receivables/payables aging), each with charts.
 
 Bank data comes straight from Odoo's own bank feed (Accounting > Bank &
 Cash), not a separate aggregator — Odoo already has a live connection to
@@ -53,22 +59,30 @@ caps how far back transactions are pulled on that first run.
 ```bash
 cp .env.example .env   # fill in real values
 pip install -r requirements.txt
-python main.py
+python main.py         # cash flow register
+python main_exec.py    # executive report
 ```
 
 ## Scheduled run
 
-`.github/workflows/daily_cashflow.yml` runs the pipeline daily at 06:00 UTC.
-Add these as GitHub repo secrets (Settings > Secrets and variables > Actions):
+Both workflows use the same GitHub repo secrets (Settings > Secrets and
+variables > Actions) — no extra setup needed for the second one:
 
 - `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_API_KEY`, `ODOO_BANK_JOURNAL_ID`
 - `GOOGLE_SERVICE_ACCOUNT_JSON` (paste the full service account JSON key content)
 - `GOOGLE_SHEET_ID`
 - `STARTING_BALANCE_AMOUNT`, `STARTING_BALANCE_DATE` (only needed until the
-  first successful run populates the sheet; harmless to leave set after)
+  cash flow pipeline's Register has its first rows; harmless to leave set —
+  the executive report also uses this as its running-balance anchor, since
+  it recomputes the cash trend independently rather than reading the
+  Register tab, so it works correctly regardless of which job runs first)
+
+- `.github/workflows/daily_cashflow.yml` — 06:00 UTC
+- `.github/workflows/daily_executive_report.yml` — 06:15 UTC
 
 ## How it works
 
+### Cash flow pipeline (`main.py` → Register / Category Rollup / Upcoming / Forecast tabs)
 - **Register**: every Odoo bank statement line (`account.bank.statement.line`)
   for the configured journal, categorized, with a running balance that
   continues from the last row already in the sheet (or the configured
@@ -80,3 +94,25 @@ Add these as GitHub repo secrets (Settings > Secrets and variables > Actions):
   (receivables) with due dates, from `account.move` where `state = posted`
   and `payment_state` is `not_paid` or `partial`.
 - **Forecast**: latest running balance + net upcoming (receivables − payables).
+
+### Executive report (`main_exec.py` → Summary / Sales / Finance tabs)
+Each run fully rewrites these three tabs (a point-in-time snapshot, not an
+append-only ledger) and recreates their charts, sourced from `sale.order`
+(Sales) and the same bank feed + open invoices/bills (Finance) as above.
+
+- **Summary**: a data-driven narrative (built from the same figures below,
+  not free-form text) plus a key-figures table — revenue, new orders,
+  delayed orders, cash flow, overdue receivables — each vs. yesterday.
+- **Sales**: order detail, a 30-day revenue trend (line chart), an order
+  status breakdown of Quotation/In Progress/Delayed/Fulfilled (pie chart —
+  "Delayed" means confirmed but past `commitment_date` and not fully
+  delivered), and top customers by order value.
+- **Finance**: open payables/receivables with an aging bucket, a 30-day
+  cash trend (line chart: net daily flow + running balance), and a
+  receivables-vs-payables aging bar chart.
+- **Known data caveat** (also written into the Summary tab itself): the
+  "Overdue Receivables — Yesterday" figure is approximated from today's
+  open-invoice snapshot, since Odoo only exposes currently-open invoices,
+  not a historical one — it slightly undercounts anything paid since
+  yesterday. Margins/COGS are intentionally not included — not reliably
+  derivable from current data without deeper product-cost analysis.

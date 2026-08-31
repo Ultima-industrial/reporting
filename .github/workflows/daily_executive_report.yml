@@ -1,0 +1,36 @@
+name: Daily Executive Report
+
+on:
+  schedule:
+    - cron: "15 6 * * *" # 06:15 UTC daily — a few minutes after the cash flow pipeline
+  workflow_dispatch: {}
+
+jobs:
+  run-exec-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Write Google service account key
+        run: echo "$GOOGLE_SERVICE_ACCOUNT_JSON" > google-service-account.json
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+
+      - name: Run executive report
+        env:
+          ODOO_URL: ${{ secrets.ODOO_URL }}
+          ODOO_DB: ${{ secrets.ODOO_DB }}
+          ODOO_USERNAME: ${{ secrets.ODOO_USERNAME }}
+          ODOO_API_KEY: ${{ secrets.ODOO_API_KEY }}
+          ODOO_BANK_JOURNAL_ID: ${{ secrets.ODOO_BANK_JOURNAL_ID }}
+          GOOGLE_SERVICE_ACCOUNT_FILE: ./google-service-account.json
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          STARTING_BALANCE_AMOUNT: ${{ secrets.STARTING_BALANCE_AMOUNT }}
+          STARTING_BALANCE_DATE: ${{ secrets.STARTING_BALANCE_DATE }}
+        run: python main_exec.py
