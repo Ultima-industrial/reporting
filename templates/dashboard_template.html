@@ -201,7 +201,7 @@
       <h2><span class="dot"></span>Sales</h2>
 
       <div class="chart-block">
-        <p class="block-title">Revenue trend &mdash; confirmed orders, 30 days</p>
+        <p class="block-title">Revenue trend &mdash; invoiced, 30 days</p>
         <svg id="revenueChart" viewBox="0 0 560 170"></svg>
         <div class="chart-caption" id="revenueCaption"></div>
       </div>
@@ -304,10 +304,10 @@ document.getElementById('narrative').textContent = DATA.narrative;
 
   const k = DATA.kpis;
   const cards = [
-    {label:'Revenue (confirmed)', value: fmtMoney(k.revenue_today), delta: deltaChip(k.revenue_today - k.revenue_yesterday, false), sub:`vs ${fmtMoney(k.revenue_yesterday)} yesterday`},
-    {label:'New Orders', value: fmtNum(k.new_orders_today), delta: deltaChipInt(k.new_orders_today - k.new_orders_yesterday, false), sub:`vs ${k.new_orders_yesterday} yesterday`},
+    {label:'Revenue (MTD, invoiced)', value: fmtMoney(k.revenue_today), delta: deltaChip(k.revenue_today - k.revenue_yesterday, false), sub:`${fmtMoney(k.revenue_yesterday)} through yesterday`},
+    {label:'New Orders (MTD)', value: fmtNum(k.new_orders_today), delta: deltaChipInt(k.new_orders_today - k.new_orders_yesterday, false), sub:`${k.new_orders_yesterday} through yesterday`},
     {label:'Delayed Orders', value: fmtNum(k.delayed_orders), delta: deltaChipInt(k.delayed_orders - k.delayed_orders_yesterday, true), sub:'past commitment date', neg: k.delayed_orders>0},
-    {label:'Cash Flow (net)', value: fmtMoney(k.cash_flow_today), delta: deltaChip(k.cash_flow_today - k.cash_flow_yesterday, false), sub:`vs ${fmtMoney(k.cash_flow_yesterday)} yesterday`},
+    {label:'Cash Flow (MTD, net)', value: fmtMoney(k.cash_flow_today), delta: deltaChip(k.cash_flow_today - k.cash_flow_yesterday, false), sub:`${fmtMoney(k.cash_flow_yesterday)} through yesterday`},
     {label:'Overdue Receivables', value: fmtMoney(k.overdue_receivables_today), delta: deltaChip(k.overdue_receivables_today - k.overdue_receivables_yesterday, true), sub:'yesterday figure approximate', neg: k.overdue_receivables_today>0},
   ];
   document.getElementById('kpiRow').innerHTML = cards.map(c => `

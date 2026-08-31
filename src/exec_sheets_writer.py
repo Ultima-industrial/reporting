@@ -153,7 +153,7 @@ class ExecSheetsWriter:
         ws.merge_cells("A1:F4")
         ws.format("A1:F4", {"wrapStrategy": "WRAP", "verticalAlignment": "TOP"})
 
-        header = ["Metric", "Today", "Yesterday", "Change", "Notes"]
+        header = ["Metric", "As of Today", "As of Yesterday", "Change", "Notes"]
         self._write_block(ws, 6, 1, [header] + key_figures_rows)
         # Revenue/Cash Flow/Overdue Receivables are money (2dp); New/Delayed Orders are counts (integer).
         ws.format("B7:D7", {"numberFormat": {"type": "NUMBER", "pattern": "#,##0.00"}})
@@ -183,7 +183,7 @@ class ExecSheetsWriter:
         self._write_block(ws, 1, 16, [cust_header] + top_customer_rows)
 
         chart_row = max(len(orders_rows), len(revenue_trend_rows), len(status_rows), len(top_customer_rows)) + 4
-        self.add_line_chart(ws, "Revenue Trend (30 days)", 2, len(revenue_trend_rows), domain_col=10, series_cols=[11], anchor_row=chart_row, anchor_col=1)
+        self.add_line_chart(ws, "Revenue Trend (invoiced, 30 days)", 2, len(revenue_trend_rows), domain_col=10, series_cols=[11], anchor_row=chart_row, anchor_col=1)
         self.add_pie_chart(ws, "Order Status Breakdown", 2, len(status_rows), label_col=13, value_col=14, anchor_row=chart_row, anchor_col=10)
 
     def write_finance(self, open_items_rows, cash_trend_rows, aging_rows):

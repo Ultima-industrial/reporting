@@ -67,11 +67,27 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     today = today or date.today()
     yesterday = today - timedelta(days=1)
     trend_start = today - timedelta(days=TREND_DAYS - 1)
+    month_start = today.replace(day=1)
+    # Orders/invoices fetch window must cover both the trend chart and
+    # month-to-date sums — whichever of the two starts earlier.
+    fetch_start = min(trend_start, month_start)
 
     caveats = []
 
+    def mtd_sum(dated_amounts, as_of):
+        """Sum of amounts dated in [month_start, as_of]. 0 if as_of predates
+        month_start (e.g. computing "yesterday" on the 1st of the month)."""
+        if as_of < month_start:
+            return 0.0
+        return sum(amount for d, amount in dated_amounts if month_start <= d <= as_of)
+
+    def mtd_count(dates, as_of):
+        if as_of < month_start:
+            return 0
+        return sum(1 for d in dates if month_start <= d <= as_of)
+
     # --- Sales ---
-    orders_raw = odoo.sales_orders(from_date=trend_start.isoformat())
+    orders_raw = odoo.sales_orders(from_date=fetch_start.isoformat())
     orders = []
     for o in orders_raw:
         order_date = _date_part(o["date_order"])
@@ -82,11 +98,16 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "partner_name": o["partner_id"][1] if o.get("partner_id") else "(unknown)",
         })
 
-    def confirmed_revenue(d):
-        return sum(o["amount_total"] for o in orders if o["order_date"] == d and o["state"] in ("sale", "done"))
+    new_orders_today = mtd_count([o["order_date"] for o in orders], today)
+    new_orders_yesterday = mtd_count([o["order_date"] for o in orders], yesterday)
 
-    def new_orders_count(d):
-        return sum(1 for o in orders if o["order_date"] == d)
+    # Revenue is actual invoiced amounts (account.move), not sale-order value —
+    # a sale order being confirmed doesn't mean it's been invoiced/recognized yet.
+    invoices_raw = odoo.posted_customer_invoices(from_date=fetch_start.isoformat())
+    invoiced = [(_date_part(inv["invoice_date"]), float(inv["amount_total"])) for inv in invoices_raw if inv.get("invoice_date")]
+    revenue_today = mtd_sum(invoiced, today)
+    revenue_yesterday = mtd_sum(invoiced, yesterday)
+    revenue_trend = _daily_series(invoiced, trend_start, today)
 
     status_today = [(_order_status(o, today), o) for o in orders]
     delayed_today = [o for label, o in status_today if label == "Delayed"]
@@ -100,8 +121,6 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     status_breakdown = defaultdict(int)
     for label, _ in status_today:
         status_breakdown[label] += 1
-
-    revenue_trend = _daily_series([(o["order_date"], o["amount_total"]) for o in orders if o["state"] in ("sale", "done")], trend_start, today)
 
     customer_totals = defaultdict(float)
     for o in orders:
@@ -117,7 +136,7 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     # anchor, never by just summing "the last N days" on top of it. Adding a
     # trailing window on top of the anchor double-counts every transaction
     # that already happened between the anchor date and window_start.
-    window_start = min(trend_start, starting_balance_date)
+    window_start = min(trend_start, month_start, starting_balance_date)
     window_end = max(today, starting_balance_date)
     txns_raw = odoo.bank_transactions(bank_journal_id, from_date=window_start.isoformat())
     daily_net = defaultdict(float)
@@ -145,8 +164,10 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     latest_balance = full_balance[today]
     balance_trend = [(d, full_balance[d]) for d in sorted(full_balance) if trend_start <= d <= today]
     net_cash_flow = [(d, daily_net.get(d, 0.0)) for d in sorted(full_balance) if trend_start <= d <= today]
-    net_today = daily_net.get(today, 0.0)
-    net_yesterday = daily_net.get(yesterday, 0.0)
+    # Cash Flow KPI is month-to-date net movement, not just today's — consistent
+    # with Revenue/New Orders now also being period-to-date rather than single-day.
+    cash_flow_today = mtd_sum(list(daily_net.items()), today)
+    cash_flow_yesterday = mtd_sum(list(daily_net.items()), yesterday)
     receipts_today = sum(float(t["amount"]) for t in txns_raw if _date_part(t["date"]) == today and float(t["amount"]) > 0)
     payments_today = sum(-float(t["amount"]) for t in txns_raw if _date_part(t["date"]) == today and float(t["amount"]) < 0)
 
@@ -188,10 +209,10 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         "caveats": caveats,
         "sales": {
             "orders": orders,
-            "revenue_today": confirmed_revenue(today),
-            "revenue_yesterday": confirmed_revenue(yesterday),
-            "new_orders_today": new_orders_count(today),
-            "new_orders_yesterday": new_orders_count(yesterday),
+            "revenue_today": revenue_today,
+            "revenue_yesterday": revenue_yesterday,
+            "new_orders_today": new_orders_today,
+            "new_orders_yesterday": new_orders_yesterday,
             "delayed_orders": delayed_today,
             "delayed_orders_count_yesterday": delayed_yesterday_count,
             "in_progress_orders": in_progress_today,
@@ -201,8 +222,8 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         },
         "finance": {
             "latest_balance": latest_balance,
-            "cash_flow_today": net_today,
-            "cash_flow_yesterday": net_yesterday,
+            "cash_flow_today": cash_flow_today,
+            "cash_flow_yesterday": cash_flow_yesterday,
             "receipts_today": receipts_today,
             "payments_today": payments_today,
             "balance_trend": balance_trend,

@@ -10,6 +10,11 @@ def _fmt_money(x):
     return f"{x:,.2f}"
 
 
+def _fmt_eur(x):
+    """€ with the sign in front of the symbol (-€13,428.35), not after it."""
+    return f"-€{_fmt_money(abs(x))}" if x < 0 else f"€{_fmt_money(x)}"
+
+
 def _narrative(data):
     s = data["sales"]
     f = data["finance"]
@@ -24,12 +29,12 @@ def _narrative(data):
         parts.append(f"{len(f['overdue_receivables_today'])} customer invoice(s) totaling €{_fmt_money(total)} are overdue.")
 
     parts.append(
-        f"Today: {s['new_orders_today']} new order(s) (€{_fmt_money(s['revenue_today'])} confirmed revenue), "
-        f"vs {s['new_orders_yesterday']} yesterday (€{_fmt_money(s['revenue_yesterday'])})."
+        f"Month-to-date: {s['new_orders_today']} new order(s), €{_fmt_money(s['revenue_today'])} invoiced revenue "
+        f"(vs €{_fmt_money(s['revenue_yesterday'])} through yesterday)."
     )
     parts.append(
-        f"Cash position is €{_fmt_money(f['latest_balance'])}, with a net movement of €{_fmt_money(f['cash_flow_today'])} today "
-        f"(€{_fmt_money(f['receipts_today'])} in, €{_fmt_money(f['payments_today'])} out)."
+        f"Cash position is €{_fmt_money(f['latest_balance'])}, with {_fmt_eur(f['cash_flow_today'])} net movement "
+        f"month-to-date (today alone: €{_fmt_money(f['receipts_today'])} in, €{_fmt_money(f['payments_today'])} out)."
     )
     open_payables_total = sum(float(b["amount_residual"]) for b in f["open_bills"])
     parts.append(f"Open payables to suppliers total €{_fmt_money(open_payables_total)} across {len(f['open_bills'])} bill(s).")
@@ -47,14 +52,14 @@ def _key_figures_rows(data):
     overdue_today_total = sum(float(i["amount_residual"]) for i in f["overdue_receivables_today"])
 
     return [
-        ["Revenue (confirmed orders)", s["revenue_today"], s["revenue_yesterday"],
-         s["revenue_today"] - s["revenue_yesterday"], ""],
-        ["New Orders", s["new_orders_today"], s["new_orders_yesterday"],
-         s["new_orders_today"] - s["new_orders_yesterday"], ""],
+        ["Revenue (MTD, invoiced)", s["revenue_today"], s["revenue_yesterday"],
+         s["revenue_today"] - s["revenue_yesterday"], "Posted customer invoices, month-to-date"],
+        ["New Orders (MTD)", s["new_orders_today"], s["new_orders_yesterday"],
+         s["new_orders_today"] - s["new_orders_yesterday"], "Sale orders created this month so far"],
         ["Delayed Orders", len(s["delayed_orders"]), s["delayed_orders_count_yesterday"],
          len(s["delayed_orders"]) - s["delayed_orders_count_yesterday"], "Past commitment date, not yet fulfilled"],
-        ["Cash Flow (net)", f["cash_flow_today"], f["cash_flow_yesterday"],
-         f["cash_flow_today"] - f["cash_flow_yesterday"], ""],
+        ["Cash Flow (MTD, net)", f["cash_flow_today"], f["cash_flow_yesterday"],
+         f["cash_flow_today"] - f["cash_flow_yesterday"], "Net bank movement, month-to-date"],
         ["Overdue Receivables", overdue_today_total, f["overdue_receivables_yesterday_total"],
          overdue_today_total - f["overdue_receivables_yesterday_total"], "Yesterday figure is approximate (see caveats)"],
     ]

@@ -90,6 +90,19 @@ class OdooClient:
             ["id", "date", "payment_ref", "partner_id", "amount"],
         )
 
+    def posted_customer_invoices(self, from_date=None):
+        """All posted customer invoices (paid or not) with an invoice_date on
+        or after from_date — used for actual invoiced revenue, unlike
+        open_customer_invoices() which only returns currently-unpaid ones."""
+        domain = [["move_type", "=", "out_invoice"], ["state", "=", "posted"]]
+        if from_date:
+            domain.append(["invoice_date", ">=", from_date])
+        return self._search_read(
+            "account.move",
+            domain,
+            ["name", "partner_id", "invoice_date", "amount_total"],
+        )
+
     def sales_orders(self, from_date=None):
         """Sale orders (quotations + confirmed), excluding cancelled, with the
         fields needed for revenue, fulfillment status, and delay detection.
