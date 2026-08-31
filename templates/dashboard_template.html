@@ -1,0 +1,449 @@
+<title>Ultima Pulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --bg:#0A0E13; --surface:#131920; --surface-2:#1B232C; --border:#242E38;
+    --text:#E8EDF1; --text-muted:#8B98A5; --text-faint:#5C6A77;
+    --accent:#33B7AC; --accent-strong:#52D6CA; --accent-soft:rgba(51,183,172,.16);
+    --good:#38C172; --good-soft:rgba(56,193,114,.14);
+    --warning:#E0A83E; --warning-soft:rgba(224,168,62,.14);
+    --critical:#E15361; --critical-soft:rgba(225,83,97,.14);
+    --shadow:rgba(0,0,0,.4);
+    --neutral-bar:#4A5866;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#F2F4F6; --surface:#FFFFFF; --surface-2:#EBEEF1; --border:#DCE2E7;
+      --text:#16202A; --text-muted:#566673; --text-faint:#8592A0;
+      --accent:#1A8F86; --accent-strong:#0F6D66; --accent-soft:rgba(26,143,134,.12);
+      --good:#1D9A5B; --good-soft:rgba(29,154,91,.12);
+      --warning:#A9701C; --warning-soft:rgba(169,112,28,.12);
+      --critical:#C13648; --critical-soft:rgba(193,54,72,.12);
+      --shadow:rgba(16,24,32,.08);
+      --neutral-bar:#B9C2CA;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#F2F4F6; --surface:#FFFFFF; --surface-2:#EBEEF1; --border:#DCE2E7;
+    --text:#16202A; --text-muted:#566673; --text-faint:#8592A0;
+    --accent:#1A8F86; --accent-strong:#0F6D66; --accent-soft:rgba(26,143,134,.12);
+    --good:#1D9A5B; --good-soft:rgba(29,154,91,.12);
+    --warning:#A9701C; --warning-soft:rgba(169,112,28,.12);
+    --critical:#C13648; --critical-soft:rgba(193,54,72,.12);
+    --shadow:rgba(16,24,32,.08);
+    --neutral-bar:#B9C2CA;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px; margin:0 auto; padding:2.25rem 1.5rem 4rem;}
+
+  /* ---- Header ---- */
+  .masthead{
+    display:flex; align-items:baseline; justify-content:space-between; gap:1rem;
+    flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:1.1rem; margin-bottom:1.5rem;
+  }
+  .brand{display:flex; align-items:baseline; gap:.85rem;}
+  .brand h1{
+    font-family:'Big Shoulders Display', sans-serif; font-weight:800;
+    font-size:clamp(1.9rem, 3.4vw, 2.6rem); letter-spacing:.01em; margin:0; line-height:1;
+    text-wrap:balance;
+  }
+  .brand .tag{
+    font-size:.72rem; text-transform:uppercase; letter-spacing:.12em; color:var(--accent);
+    border:1px solid var(--accent-soft); background:var(--accent-soft); padding:.28rem .55rem; border-radius:3px;
+    font-weight:600;
+  }
+  .masthead .meta{text-align:right; color:var(--text-muted); font-size:.85rem; line-height:1.5;}
+  .masthead .meta b{color:var(--text); font-weight:600;}
+
+  /* ---- Attention banner ---- */
+  .banner{
+    display:flex; gap:.85rem; align-items:flex-start;
+    background:var(--critical-soft); border:1px solid color-mix(in srgb, var(--critical) 40%, transparent);
+    border-left:3px solid var(--critical); border-radius:6px; padding:.9rem 1.1rem; margin-bottom:1.75rem;
+  }
+  .banner .stripe{
+    flex-shrink:0; width:1.6rem; height:1.6rem; border-radius:50%; background:var(--critical);
+    color:#fff; display:flex; align-items:center; justify-content:center; font-size:.85rem; font-weight:700;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .banner p{margin:0; font-size:.9rem; line-height:1.55; color:var(--text);}
+  .banner strong{color:var(--critical);}
+
+  /* ---- KPI row ---- */
+  .kpi-row{
+    display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:1px;
+    background:var(--border); border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:2rem;
+  }
+  .kpi{background:var(--surface); padding:1.15rem 1.25rem 1rem;}
+  .kpi .label{
+    font-size:.68rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-faint); font-weight:600;
+  }
+  .kpi .value{
+    font-family:'Big Shoulders Display', sans-serif; font-weight:700; font-size:1.85rem; line-height:1.15;
+    margin:.3rem 0 .4rem; font-variant-numeric:tabular-nums; letter-spacing:.01em;
+  }
+  .kpi .value.neg{color:var(--critical);}
+  .delta{
+    display:inline-flex; align-items:center; gap:.3rem; font-size:.76rem; font-weight:600;
+    font-variant-numeric:tabular-nums; padding:.15rem .45rem; border-radius:99px;
+  }
+  .delta.up{color:var(--good); background:var(--good-soft);}
+  .delta.down{color:var(--critical); background:var(--critical-soft);}
+  .delta.flat{color:var(--text-muted); background:var(--surface-2);}
+  .kpi .sub{font-size:.72rem; color:var(--text-faint); margin-top:.4rem;}
+
+  /* ---- Panels ---- */
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:1.25rem; align-items:start;}
+  @media (max-width:920px){ .grid{grid-template-columns:1fr;} }
+
+  .panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:8px;
+    padding:1.3rem 1.4rem 1.5rem; display:flex; flex-direction:column; gap:1.3rem;
+  }
+  .panel > h2{
+    font-family:'Big Shoulders Display', sans-serif; font-weight:700; font-size:1.15rem;
+    letter-spacing:.02em; margin:0; text-transform:uppercase; color:var(--text-muted);
+    display:flex; align-items:center; gap:.5rem;
+  }
+  .panel > h2 .dot{width:.5rem; height:.5rem; border-radius:50%; background:var(--accent);}
+
+  .block-title{
+    font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:var(--text-faint);
+    font-weight:600; margin:0 0 .55rem;
+  }
+
+  .chart-block svg{width:100%; height:auto; display:block; overflow:visible;}
+  .chart-caption{display:flex; justify-content:space-between; font-size:.72rem; color:var(--text-faint); margin-top:.3rem;}
+  .chart-caption b{color:var(--text);}
+
+  /* status distribution */
+  .status-bar{display:flex; height:.85rem; border-radius:5px; overflow:hidden; background:var(--surface-2);}
+  .status-bar span{height:100%;}
+  .status-legend{display:flex; flex-wrap:wrap; gap:.7rem 1rem; margin-top:.65rem; font-size:.78rem;}
+  .status-legend .item{display:flex; align-items:center; gap:.4rem; color:var(--text-muted);}
+  .status-legend .sw{width:.6rem; height:.6rem; border-radius:2px;}
+  .status-legend b{color:var(--text); font-variant-numeric:tabular-nums;}
+
+  /* top customers */
+  .barlist{display:flex; flex-direction:column; gap:.55rem;}
+  .barlist .row{display:grid; grid-template-columns:9rem 1fr auto; align-items:center; gap:.6rem; font-size:.82rem;}
+  .barlist .name{color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .barlist .track{height:.6rem; background:var(--surface-2); border-radius:3px; overflow:hidden;}
+  .barlist .fill{height:100%; background:var(--accent); border-radius:3px;}
+  .barlist .amt{font-variant-numeric:tabular-nums; color:var(--text); font-size:.78rem;}
+
+  /* aging bars */
+  .aging-legend{display:flex; gap:1.1rem; font-size:.76rem; color:var(--text-muted); margin-bottom:.4rem;}
+  .aging-legend .item{display:flex; align-items:center; gap:.35rem;}
+  .aging-legend .sw{width:.6rem; height:.6rem; border-radius:2px;}
+
+  /* tables */
+  table.data{width:100%; border-collapse:collapse; font-size:.8rem;}
+  table.data th{
+    text-align:left; font-size:.66rem; text-transform:uppercase; letter-spacing:.07em; color:var(--text-faint);
+    font-weight:600; padding:0 .4rem .45rem; border-bottom:1px solid var(--border);
+  }
+  table.data td{padding:.42rem .4rem; border-bottom:1px solid var(--border); color:var(--text-muted); vertical-align:top;}
+  table.data td.name{color:var(--text); font-weight:500;}
+  table.data td.num{text-align:right; font-variant-numeric:tabular-nums; font-family:'IBM Plex Mono', monospace; color:var(--text);}
+  table.data tr:last-child td{border-bottom:none;}
+  .table-wrap{overflow-x:auto;}
+  .pill{
+    display:inline-block; font-size:.68rem; padding:.1rem .45rem; border-radius:99px; font-weight:600;
+  }
+  .pill.late{background:var(--critical-soft); color:var(--critical);}
+
+  /* footer */
+  footer{margin-top:2.25rem; padding-top:1.25rem; border-top:1px solid var(--border);}
+  footer p{font-size:.76rem; color:var(--text-faint); line-height:1.6; margin:0 0 .5rem; max-width:70ch;}
+  footer p b{color:var(--text-muted);}
+
+  a{color:var(--accent);}
+  ::selection{background:var(--accent-soft);}
+
+  .narrative{
+    font-size:.95rem; line-height:1.65; color:var(--text-muted); max-width:68ch;
+    margin:0 0 1.5rem;
+  }
+</style>
+
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="brand">
+      <h1>Ultima Pulse</h1>
+      <span class="tag">Executive Overview</span>
+    </div>
+    <div class="meta">
+      <div><b id="metaDate">—</b></div>
+      <div>Snapshot from Odoo &middot; refreshed on request</div>
+    </div>
+  </div>
+
+  <p class="narrative" id="narrative"></p>
+
+  <div id="banner"></div>
+
+  <div class="kpi-row" id="kpiRow"></div>
+
+  <div class="grid">
+
+    <section class="panel">
+      <h2><span class="dot"></span>Sales</h2>
+
+      <div class="chart-block">
+        <p class="block-title">Revenue trend &mdash; confirmed orders, 30 days</p>
+        <svg id="revenueChart" viewBox="0 0 560 170"></svg>
+        <div class="chart-caption" id="revenueCaption"></div>
+      </div>
+
+      <div>
+        <p class="block-title">Order status</p>
+        <div class="status-bar" id="statusBar"></div>
+        <div class="status-legend" id="statusLegend"></div>
+      </div>
+
+      <div>
+        <p class="block-title">Top customers &mdash; 30 days</p>
+        <div class="barlist" id="topCustomers"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2><span class="dot"></span>Finance</h2>
+
+      <div class="chart-block">
+        <p class="block-title">Cash balance trend &mdash; 30 days</p>
+        <svg id="balanceChart" viewBox="0 0 560 170"></svg>
+        <div class="chart-caption" id="balanceCaption"></div>
+      </div>
+
+      <div>
+        <p class="block-title">Receivables &amp; payables aging</p>
+        <div class="aging-legend">
+          <span class="item"><span class="sw" style="background:var(--accent)"></span>Receivables</span>
+          <span class="item"><span class="sw" style="background:var(--neutral-bar)"></span>Payables</span>
+        </div>
+        <svg id="agingChart" viewBox="0 0 560 150"></svg>
+      </div>
+
+      <div>
+        <p class="block-title">Largest overdue receivables</p>
+        <div class="table-wrap">
+          <table class="data" id="overdueTable"></table>
+        </div>
+      </div>
+
+      <div>
+        <p class="block-title">Open vendor bills</p>
+        <div class="table-wrap">
+          <table class="data" id="billsTable"></table>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <footer>
+    <p><b>Overdue receivables &mdash; yesterday</b> is approximated from today's open-invoice snapshot (Odoo only exposes currently-open invoices, not a historical one), so it slightly undercounts anything paid since yesterday.</p>
+    <p><b>Margins/COGS</b> are intentionally excluded &mdash; not reliably derivable from current data without deeper product-cost analysis.</p>
+    <p>Source: Odoo (sale orders, bank feed, open invoices/bills), read-only. Ask for a refresh any time to pull a new snapshot.</p>
+  </footer>
+
+</div>
+
+<script>
+const DATA = __DATA_JSON__;
+const fmtMoney = n => new Intl.NumberFormat('it-IT', {style:'currency', currency:'EUR', maximumFractionDigits:0}).format(n);
+const fmtNum = n => new Intl.NumberFormat('it-IT').format(n);
+const fmtDateShort = iso => { const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}); };
+const fmtDateLong = iso => { const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'long',year:'numeric'}); };
+
+document.getElementById('metaDate').textContent = fmtDateLong(DATA.today);
+document.getElementById('narrative').textContent = DATA.narrative;
+
+// ---------- Banner ----------
+(function renderBanner(){
+  const issues = [];
+  if (DATA.kpis.delayed_orders > 0) issues.push(`${DATA.kpis.delayed_orders} order${DATA.kpis.delayed_orders>1?'s':''} past commitment date`);
+  if (DATA.kpis.overdue_receivables_today > 0) issues.push(`${fmtMoney(DATA.kpis.overdue_receivables_today)} in overdue receivables`);
+  const el = document.getElementById('banner');
+  if (!issues.length) { el.remove(); return; }
+  el.className = 'banner';
+  el.innerHTML = `<span class="stripe">!</span><p><strong>Needs attention:</strong> ${issues.join(' \u00B7 ')}.</p>`;
+})();
+
+// ---------- KPI row ----------
+(function renderKpis(){
+  const UP_ARROW = '\u25B2', DOWN_ARROW = '\u25BC', DOT = '\u00B7';
+  const deltaChip = (delta, invert) => {
+    const good = invert ? delta < 0 : delta > 0;
+    const cls = delta === 0 ? 'flat' : (good ? 'up' : 'down');
+    const arrow = delta === 0 ? DOT : (delta > 0 ? UP_ARROW : DOWN_ARROW);
+    return `<span class="delta ${cls}">${arrow} ${delta===0?'flat':fmtMoneyShort(Math.abs(delta))}</span>`;
+  };
+  const deltaChipInt = (delta, invert) => {
+    const good = invert ? delta < 0 : delta > 0;
+    const cls = delta === 0 ? 'flat' : (good ? 'up' : 'down');
+    const arrow = delta === 0 ? DOT : (delta > 0 ? UP_ARROW : DOWN_ARROW);
+    return `<span class="delta ${cls}">${arrow} ${delta===0?'flat':Math.abs(delta)}</span>`;
+  };
+  function fmtMoneyShort(n){
+    if (Math.abs(n) >= 1000) return '€' + (n/1000).toFixed(1) + 'k';
+    return '€' + n.toFixed(0);
+  }
+
+  const k = DATA.kpis;
+  const cards = [
+    {label:'Revenue (confirmed)', value: fmtMoney(k.revenue_today), delta: deltaChip(k.revenue_today - k.revenue_yesterday, false), sub:`vs ${fmtMoney(k.revenue_yesterday)} yesterday`},
+    {label:'New Orders', value: fmtNum(k.new_orders_today), delta: deltaChipInt(k.new_orders_today - k.new_orders_yesterday, false), sub:`vs ${k.new_orders_yesterday} yesterday`},
+    {label:'Delayed Orders', value: fmtNum(k.delayed_orders), delta: deltaChipInt(k.delayed_orders - k.delayed_orders_yesterday, true), sub:'past commitment date', neg: k.delayed_orders>0},
+    {label:'Cash Flow (net)', value: fmtMoney(k.cash_flow_today), delta: deltaChip(k.cash_flow_today - k.cash_flow_yesterday, false), sub:`vs ${fmtMoney(k.cash_flow_yesterday)} yesterday`},
+    {label:'Overdue Receivables', value: fmtMoney(k.overdue_receivables_today), delta: deltaChip(k.overdue_receivables_today - k.overdue_receivables_yesterday, true), sub:'yesterday figure approximate', neg: k.overdue_receivables_today>0},
+  ];
+  document.getElementById('kpiRow').innerHTML = cards.map(c => `
+    <div class="kpi">
+      <div class="label">${c.label}</div>
+      <div class="value${c.neg?' neg':''}">${c.value}</div>
+      ${c.delta}
+      <div class="sub">${c.sub}</div>
+    </div>
+  `).join('');
+})();
+
+// ---------- Line chart helper ----------
+function lineChart(svgEl, series, {color, w=560, h=170, pad=28}){
+  const values = series.map(d => d[1]);
+  let min = Math.min(...values, 0), max = Math.max(...values, 0);
+  if (min === max) { min -= 1; max += 1; }
+  const range = max - min;
+  const innerW = w - pad*2, innerH = h - pad*1.6;
+  const x = i => pad + (i/(series.length-1)) * innerW;
+  const y = v => pad*0.6 + innerH - ((v - min)/range) * innerH;
+
+  const linePts = series.map((d,i) => `${x(i).toFixed(1)},${y(d[1]).toFixed(1)}`).join(' ');
+  const areaPts = `${x(0).toFixed(1)},${y(0).toFixed(1)} ` + linePts + ` ${x(series.length-1).toFixed(1)},${y(0).toFixed(1)}`;
+
+  const gridLines = [0.25, 0.5, 0.75].map(f => {
+    const gy = pad*0.6 + innerH*f;
+    return `<line x1="${pad}" y1="${gy.toFixed(1)}" x2="${w-pad}" y2="${gy.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`;
+  }).join('');
+
+  let zeroLine = '';
+  if (min < 0 && max > 0) {
+    zeroLine = `<line x1="${pad}" y1="${y(0).toFixed(1)}" x2="${w-pad}" y2="${y(0).toFixed(1)}" stroke="var(--text-faint)" stroke-width="1" stroke-dasharray="2,3"/>`;
+  }
+
+  const gid = 'grad-' + Math.random().toString(36).slice(2,9);
+  const last = series[series.length-1];
+  const lastColor = last[1] < 0 ? 'var(--critical)' : color;
+
+  svgEl.innerHTML = `
+    <defs>
+      <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    ${gridLines}
+    ${zeroLine}
+    <polygon points="${areaPts}" fill="url(#${gid})"/>
+    <polyline points="${linePts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${x(series.length-1).toFixed(1)}" cy="${y(last[1]).toFixed(1)}" r="3.5" fill="${lastColor}"/>
+  `;
+}
+
+lineChart(document.getElementById('revenueChart'), DATA.revenue_trend, {color:'var(--accent)'});
+lineChart(document.getElementById('balanceChart'), DATA.balance_trend, {color:'var(--accent)'});
+
+document.getElementById('revenueCaption').innerHTML =
+  `<span>${fmtDateShort(DATA.revenue_trend[0][0])}</span><b>${fmtMoney(DATA.revenue_trend.reduce((s,d)=>s+d[1],0))} total</b><span>${fmtDateShort(DATA.revenue_trend[DATA.revenue_trend.length-1][0])}</span>`;
+document.getElementById('balanceCaption').innerHTML =
+  `<span>${fmtDateShort(DATA.balance_trend[0][0])}</span><b>${fmtMoney(DATA.balance_trend[DATA.balance_trend.length-1][1])} now</b><span>${fmtDateShort(DATA.balance_trend[DATA.balance_trend.length-1][0])}</span>`;
+
+// ---------- Order status ----------
+(function renderStatus(){
+  const order = ['Fulfilled','In Progress','Delayed','Quotation'];
+  const colors = {Fulfilled:'var(--good)', 'In Progress':'var(--accent)', Delayed:'var(--critical)', Quotation:'var(--neutral-bar)'};
+  const total = Object.values(DATA.status_breakdown).reduce((a,b)=>a+b,0) || 1;
+  const bar = document.getElementById('statusBar');
+  const legend = document.getElementById('statusLegend');
+  bar.innerHTML = order.filter(k=>DATA.status_breakdown[k]).map(k => {
+    const pct = (DATA.status_breakdown[k]/total*100).toFixed(2);
+    return `<span style="width:${pct}%; background:${colors[k]}"></span>`;
+  }).join('');
+  legend.innerHTML = order.filter(k=>DATA.status_breakdown[k]).map(k =>
+    `<span class="item"><span class="sw" style="background:${colors[k]}"></span>${k} <b>${DATA.status_breakdown[k]}</b></span>`
+  ).join('');
+})();
+
+// ---------- Top customers ----------
+(function renderCustomers(){
+  const el = document.getElementById('topCustomers');
+  if (!DATA.top_customers.length) { el.innerHTML = `<span class="sub" style="color:var(--text-faint); font-size:.8rem;">No confirmed orders in the last 30 days.</span>`; return; }
+  const max = Math.max(...DATA.top_customers.map(c=>c[1]));
+  el.innerHTML = DATA.top_customers.map(([name, amt]) => `
+    <div class="row">
+      <span class="name" title="${name}">${name}</span>
+      <span class="track"><span class="fill" style="width:${(amt/max*100).toFixed(1)}%"></span></span>
+      <span class="amt">${fmtMoney(amt)}</span>
+    </div>
+  `).join('');
+})();
+
+// ---------- Aging bar chart ----------
+(function renderAging(){
+  const svg = document.getElementById('agingChart');
+  const w = 560, h = 150, pad = 8, bottomPad = 34;
+  const buckets = DATA.aging_buckets;
+  const rec = DATA.receivables_aging, pay = DATA.payables_aging;
+  const max = Math.max(...rec, ...pay, 1);
+  const groupW = (w - pad*2) / buckets.length;
+  const barW = groupW*0.32;
+  const chartH = h - bottomPad - 10;
+
+  let bars = '';
+  buckets.forEach((b,i) => {
+    const gx = pad + i*groupW;
+    const recH = (rec[i]/max) * chartH;
+    const payH = (pay[i]/max) * chartH;
+    bars += `<rect x="${(gx+groupW/2-barW-2).toFixed(1)}" y="${(10+chartH-recH).toFixed(1)}" width="${barW.toFixed(1)}" height="${recH.toFixed(1)}" rx="2" fill="var(--accent)"/>`;
+    bars += `<rect x="${(gx+groupW/2+2).toFixed(1)}" y="${(10+chartH-payH).toFixed(1)}" width="${barW.toFixed(1)}" height="${payH.toFixed(1)}" rx="2" fill="var(--neutral-bar)"/>`;
+    const label = b.replace(' days overdue','d').replace('Not yet due','Current');
+    bars += `<text x="${(gx+groupW/2).toFixed(1)}" y="${h-14}" text-anchor="middle" font-size="10.5" fill="var(--text-faint)" font-family="IBM Plex Sans, sans-serif">${label}</text>`;
+  });
+  svg.innerHTML = `<line x1="${pad}" y1="${10+chartH}" x2="${w-pad}" y2="${10+chartH}" stroke="var(--border)"/>` + bars;
+})();
+
+// ---------- Tables ----------
+function renderTable(id, rows, {emptyMsg}) {
+  const el = document.getElementById(id);
+  if (!rows.length) { el.innerHTML = `<tr><td style="color:var(--text-faint); padding:.5rem .4rem;">${emptyMsg}</td></tr>`; return; }
+  el.innerHTML = `
+    <thead><tr><th>Ref</th><th>Counterparty</th><th>Due</th><th style="text-align:right">Amount</th></tr></thead>
+    <tbody>
+      ${rows.map(r => `
+        <tr>
+          <td class="name">${r.name}</td>
+          <td>${r.customer}</td>
+          <td>${r.due_date ? fmtDateShort(r.due_date) : '—'}${isLate(r.due_date) ? ' <span class="pill late">late</span>' : ''}</td>
+          <td class="num">${fmtMoney(r.amount)}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  `;
+}
+function isLate(due){ if(!due) return false; return due < DATA.today; }
+
+renderTable('overdueTable', DATA.top_overdue_receivables, {emptyMsg:'No overdue receivables.'});
+renderTable('billsTable', DATA.open_bills_list, {emptyMsg:'No open vendor bills.'});
+</script>

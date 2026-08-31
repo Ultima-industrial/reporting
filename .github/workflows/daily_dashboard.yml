@@ -1,0 +1,31 @@
+name: Daily Dashboard Deploy
+
+on:
+  schedule:
+    - cron: "30 6 * * *" # 06:30 UTC daily — after the other two jobs
+  workflow_dispatch: {}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Generate dashboard and deploy to Netlify
+        env:
+          ODOO_URL: ${{ secrets.ODOO_URL }}
+          ODOO_DB: ${{ secrets.ODOO_DB }}
+          ODOO_USERNAME: ${{ secrets.ODOO_USERNAME }}
+          ODOO_API_KEY: ${{ secrets.ODOO_API_KEY }}
+          ODOO_BANK_JOURNAL_ID: ${{ secrets.ODOO_BANK_JOURNAL_ID }}
+          STARTING_BALANCE_AMOUNT: ${{ secrets.STARTING_BALANCE_AMOUNT }}
+          STARTING_BALANCE_DATE: ${{ secrets.STARTING_BALANCE_DATE }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: python main_dashboard.py

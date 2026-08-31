@@ -1,15 +1,20 @@
 # Ultima Industrial — Reporting Pipelines
 
-Two independent daily jobs, both reading the same Odoo instance (read-only)
-and writing to the same Google Sheet, "Ultimate reporting":
+Three independent daily jobs, all reading the same Odoo instance (read-only):
 
 1. **Cash flow pipeline** (`main.py`) — a detailed, append-only transaction
    register with running balance, category roll-up, upcoming payables/
-   receivables, and a simple forecast.
+   receivables, and a simple forecast. Writes to the Google Sheet
+   "Ultimate reporting".
 2. **Executive report** (`main_exec.py`) — a daily snapshot overview for
    leadership: a narrative summary, today-vs-yesterday key figures, sales
    pipeline health (new orders, delayed orders, revenue trend), and finance
-   health (cash trend, receivables/payables aging), each with charts.
+   health (cash trend, receivables/payables aging), each with charts. Also
+   writes to "Ultimate reporting" (separate tabs).
+3. **Dashboard website** (`main_dashboard.py`) — the same executive snapshot
+   as a standalone public-facing website ("Ultima Pulse"), for sharing with
+   people who shouldn't have Google Sheet access — e.g. external
+   shareholders. Deployed to Netlify.
 
 Bank data comes straight from Odoo's own bank feed (Accounting > Bank &
 Cash), not a separate aggregator — Odoo already has a live connection to
@@ -54,13 +59,26 @@ caps how far back transactions are pulled on that first run.
   `config/counterparty_map.yaml` (exact name → category), which always wins
   over the keyword rules.
 
+### 5. Netlify (dashboard website only)
+1. Create a free account at netlify.com (or reuse an existing one).
+2. Create a new empty site — "Add new site" → any option that doesn't
+   require connecting a git repo yet is fine, since deployment happens via
+   Netlify's Deploy API directly from Python (`src/netlify_deploy.py`), not
+   Netlify's own git integration or the Node-based CLI.
+   Note the **Site ID** (Site settings → General → Site details).
+3. Generate a Personal Access Token: User settings → Applications →
+   Personal access tokens → New access token.
+4. Set `NETLIFY_AUTH_TOKEN` (the token) and `NETLIFY_SITE_ID` in `.env` for
+   a local test deploy, and as GitHub repo secrets for the scheduled job.
+
 ## Local run
 
 ```bash
 cp .env.example .env   # fill in real values
 pip install -r requirements.txt
-python main.py         # cash flow register
-python main_exec.py    # executive report
+python main.py             # cash flow register
+python main_exec.py        # executive report
+python main_dashboard.py   # generates site/index.html — deploy separately, see below
 ```
 
 ## Scheduled run
@@ -79,6 +97,10 @@ variables > Actions) — no extra setup needed for the second one:
 
 - `.github/workflows/daily_cashflow.yml` — 06:00 UTC
 - `.github/workflows/daily_executive_report.yml` — 06:15 UTC
+- `.github/workflows/daily_dashboard.yml` — 06:30 UTC, additionally needs
+  `NETLIFY_AUTH_TOKEN` and `NETLIFY_SITE_ID` as repo secrets (this job
+  doesn't touch Google Sheets at all, so none of the `GOOGLE_*` secrets are
+  needed for it specifically)
 
 ## How it works
 
@@ -116,3 +138,20 @@ append-only ledger) and recreates their charts, sourced from `sale.order`
   not a historical one — it slightly undercounts anything paid since
   yesterday. Margins/COGS are intentionally not included — not reliably
   derivable from current data without deeper product-cost analysis.
+
+### Dashboard website (`main_dashboard.py` → `site/index.html`, deployed to Netlify)
+Same underlying data and figures as the executive report, rendered as a
+standalone static page (`templates/dashboard_template.html` + `src/dashboard.py`)
+instead of Google Sheet tabs — no live connector pulls data into the page
+itself, since there's no Odoo/Sheets connector available to a hosted page;
+each deploy is a fresh snapshot baked in at generation time. This is the
+one meant for sharing outside the company (e.g. shareholders), since it
+doesn't require any Odoo or Google account access to view — whoever holds
+the Netlify URL can see it.
+
+### Reporting correction: `config/paid_overrides.yaml`
+Vendor bills/customer invoices confirmed paid via the real bank statement
+but not yet reconciled as paid in Odoo get excluded from every report via
+this file (checked by `src/odoo_client.py`). This is a reporting-side
+workaround — reconcile the actual payment in Odoo when convenient, and
+remove the entry here once Odoo agrees.

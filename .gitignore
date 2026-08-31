@@ -7,3 +7,4 @@ venv/
 data/state/
 google-service-account.json
 *.json.key
+site/
