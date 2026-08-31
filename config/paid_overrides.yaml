@@ -1,0 +1,17 @@
+# Vendor bills / customer invoices confirmed paid via the actual bank
+# statement but not yet reconciled as paid in Odoo (payment_state still
+# not_paid/partial). Reports exclude these from open/overdue totals.
+#
+# This is a reporting-side workaround, NOT a substitute for reconciling the
+# payment against the bill in Odoo itself — do that when convenient, then
+# remove the entry here (it'll just have no effect once Odoo agrees).
+#
+# Each entry: the exact account.move "name" (e.g. "BILL/2025/10/0001"),
+# with the evidence that justified excluding it.
+
+- name: "BILL/2025/10/0001"
+  reason: >
+    Bank statement (movimenti_2026-08-31.xls) shows an exact-amount wire
+    transfer of EUR 425.48 to I.R.C.A. SERVICE SPA on 2026-02-06 — matches
+    this bill's residual exactly. Odoo has not marked it paid.
+  confirmed_date: "2026-02-06"

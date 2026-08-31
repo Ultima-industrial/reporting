@@ -9,6 +9,22 @@ issue to resolve in Odoo, not a bug in this client.
 
 import xmlrpc.client
 
+import yaml
+
+from .config import CONFIG_DIR
+
+
+def _paid_override_names():
+    """Bills/invoices confirmed paid via the real bank statement but not yet
+    reconciled in Odoo (see config/paid_overrides.yaml) — excluded from
+    every open/overdue query so reports don't count them as outstanding."""
+    path = CONFIG_DIR / "paid_overrides.yaml"
+    if not path.exists():
+        return set()
+    with open(path, "r", encoding="utf-8") as f:
+        entries = yaml.safe_load(f) or []
+    return {e["name"] for e in entries}
+
 
 class OdooClient:
     def __init__(self, cfg):
@@ -29,29 +45,28 @@ class OdooClient:
             [domain, fields],
         )
 
-    def open_vendor_bills(self):
-        """Posted, unpaid/partially-paid vendor bills (money going out)."""
-        return self._search_read(
+    def _open_moves(self, move_type, fields):
+        records = self._search_read(
             "account.move",
             [
-                ["move_type", "=", "in_invoice"],
+                ["move_type", "=", move_type],
                 ["state", "=", "posted"],
                 ["payment_state", "in", ["not_paid", "partial"]],
             ],
-            ["name", "partner_id", "amount_residual", "invoice_date_due", "currency_id"],
+            fields,
         )
+        excluded = _paid_override_names()
+        return [r for r in records if r["name"] not in excluded]
+
+    def open_vendor_bills(self):
+        """Posted, unpaid/partially-paid vendor bills (money going out),
+        minus any confirmed-paid-but-unreconciled overrides."""
+        return self._open_moves("in_invoice", ["name", "partner_id", "amount_residual", "invoice_date_due", "currency_id"])
 
     def open_customer_invoices(self):
-        """Posted, unpaid/partially-paid customer invoices (money coming in)."""
-        return self._search_read(
-            "account.move",
-            [
-                ["move_type", "=", "out_invoice"],
-                ["state", "=", "posted"],
-                ["payment_state", "in", ["not_paid", "partial"]],
-            ],
-            ["name", "partner_id", "amount_residual", "invoice_date_due", "currency_id"],
-        )
+        """Posted, unpaid/partially-paid customer invoices (money coming in),
+        minus any confirmed-paid-but-unreconciled overrides."""
+        return self._open_moves("out_invoice", ["name", "partner_id", "amount_residual", "invoice_date_due", "currency_id"])
 
     def bank_journals(self):
         """Lists bank journals, including their sync source, to identify which
