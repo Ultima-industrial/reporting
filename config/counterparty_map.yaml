@@ -1,0 +1,10 @@
+# Exact-match overrides for recurring counterparties. Always takes priority
+# over the keyword rules in categories.yaml. Key = counterparty name exactly
+# as it appears in the Salt Edge transaction / Odoo partner record (case-insensitive).
+#
+# Example:
+# "ACME CONSULTING SRL": Consulting
+# "MARIO ROSSI": Personnel
+#
+# Ask Lloyd for the real list of recurring counterparties before relying on this
+# file — it is intentionally empty as a starting template.

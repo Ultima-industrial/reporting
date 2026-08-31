@@ -1,0 +1,122 @@
+# Keyword rules for auto-categorization. Matching is case-insensitive substring
+# match against the transaction description + counterparty name. First category
+# whose keyword list matches wins; order matters for overlaps (e.g. "tax" before
+# "goods"). Anything matching nothing falls back to "Other".
+#
+# Edit freely — these are starting-point guesses, not final rules. Recurring
+# counterparties that don't fit a keyword pattern should go in
+# counterparty_map.yaml instead, which always takes priority over these rules.
+
+Tax & Duties:
+  - agenzia delle entrate
+  - inps
+  - inail
+  - f24
+  - iva
+  - imposta
+  - tributi
+  - dogana
+
+Personnel:
+  - stipendio
+  - stipendi
+  - payroll
+  - busta paga
+  - tfr
+  - inpdap
+  - compenso amministratore
+  - compenso
+
+Banking:
+  - commissione
+  - commissioni bancarie
+  - bank fee
+  - imposta di bollo
+  - interessi passivi
+  - spese tenuta conto
+  - costo prodotto banca
+  - blubanca web open
+
+Software/SaaS:
+  - subscription
+  - abbonamento
+  - abonnement
+  - saas
+  - microsoft
+  - google workspace
+  - aws
+  - amazon web services
+  - adobe
+  - slack
+  - zoom
+  - github
+  - notion
+  - openai
+  - chatgpt
+  - kaspr
+  - lovable
+  - flipsnack
+  - aruba spa
+  - odoo it srl
+
+Utilities:
+  - enel
+  - eni gas
+  - acea
+  - a2a
+  - hera
+  - telecom
+  - tim spa
+  - vodafone
+  - wind tre
+  - fastweb
+  - fibra
+  - bolletta
+
+Travel:
+  - trenitalia
+  - italo
+  - ryanair
+  - alitalia
+  - ita airways
+  - autostrade
+  - hotel
+  - booking.com
+  - trivago
+  - taxi
+  - autonoleggio
+  - rimborso spese viaggio
+  - telepass
+  - autogrill
+  - area di servizio
+  - autovia
+  - carburanti
+  - petrol
+  - benzina
+
+Food:
+  - ristorante
+  - trattoria
+  - bar
+  - caffe
+  - caffè
+  - supermercato
+  - conad
+  - esselunga
+  - coop
+  - pranzo di lavoro
+
+Consulting:
+  - consulenza
+  - commercialista
+  - studio legale
+  - notaio
+  - fattura professionista
+  - parcella
+
+Goods:
+  - fornitore
+  - acquisto materiali
+  - materie prime
+  - magazzino
+  - manomano
