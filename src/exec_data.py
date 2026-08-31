@@ -110,34 +110,45 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     top_customers = sorted(customer_totals.items(), key=lambda kv: -kv[1])[:5]
 
     # --- Finance: bank cash flow ---
-    anchor = starting_balance_date + timedelta(days=1)
-    bank_from = min(anchor, trend_start)
-    txns_raw = odoo.bank_transactions(bank_journal_id, from_date=bank_from.isoformat())
-    txns = [(_date_part(t["date"]), float(t["amount"])) for t in txns_raw]
-    txns.sort(key=lambda t: t[0])
+    # starting_balance_amount is only guaranteed accurate as of
+    # starting_balance_date (it's the fixed bootstrap anchor from .env, which
+    # doesn't move as this job keeps running on later days) — so every other
+    # day's balance must be derived by walking forward or backward from that
+    # anchor, never by just summing "the last N days" on top of it. Adding a
+    # trailing window on top of the anchor double-counts every transaction
+    # that already happened between the anchor date and window_start.
+    window_start = min(trend_start, starting_balance_date)
+    window_end = max(today, starting_balance_date)
+    txns_raw = odoo.bank_transactions(bank_journal_id, from_date=window_start.isoformat())
+    daily_net = defaultdict(float)
+    for t in txns_raw:
+        d = _date_part(t["date"])
+        if window_start <= d <= window_end:
+            daily_net[d] += float(t["amount"])
+
+    full_balance = {starting_balance_date: starting_balance_amount}
+    running = starting_balance_amount
+    d = starting_balance_date
+    while d < window_end:
+        d += timedelta(days=1)
+        running += daily_net.get(d, 0.0)
+        full_balance[d] = running
 
     running = starting_balance_amount
-    balance_by_date = {}
-    for d, amount in txns:
-        running += amount
-        balance_by_date[d] = running
-    latest_balance = running
+    d = starting_balance_date
+    while d > window_start:
+        removed = daily_net.get(d, 0.0)
+        d -= timedelta(days=1)
+        running -= removed
+        full_balance[d] = running
 
-    # forward-fill so days with no transactions still show the carried balance
-    balance_trend = []
-    last_known = starting_balance_amount
-    d = trend_start
-    while d <= today:
-        if d in balance_by_date:
-            last_known = balance_by_date[d]
-        balance_trend.append((d, last_known))
-        d += timedelta(days=1)
-
-    net_cash_flow = _daily_series(txns, trend_start, today)
-    net_today = dict(net_cash_flow).get(today, 0.0)
-    net_yesterday = dict(net_cash_flow).get(yesterday, 0.0)
-    receipts_today = sum(a for d, a in txns if d == today and a > 0)
-    payments_today = sum(-a for d, a in txns if d == today and a < 0)
+    latest_balance = full_balance[today]
+    balance_trend = [(d, full_balance[d]) for d in sorted(full_balance) if trend_start <= d <= today]
+    net_cash_flow = [(d, daily_net.get(d, 0.0)) for d in sorted(full_balance) if trend_start <= d <= today]
+    net_today = daily_net.get(today, 0.0)
+    net_yesterday = daily_net.get(yesterday, 0.0)
+    receipts_today = sum(float(t["amount"]) for t in txns_raw if _date_part(t["date"]) == today and float(t["amount"]) > 0)
+    payments_today = sum(-float(t["amount"]) for t in txns_raw if _date_part(t["date"]) == today and float(t["amount"]) < 0)
 
     # --- Finance: receivables / payables ---
     bills = odoo.open_vendor_bills()
