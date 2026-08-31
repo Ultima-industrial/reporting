@@ -14,7 +14,14 @@ Three independent daily jobs, all reading the same Odoo instance (read-only):
 3. **Dashboard website** (`main_dashboard.py`) — the same executive snapshot
    as a standalone public-facing website ("Ultima Pulse"), for sharing with
    people who shouldn't have Google Sheet access — e.g. external
-   shareholders. Deployed to Netlify.
+   shareholders. Deployed to GitHub Pages.
+
+**Note:** this repo is public (a deliberate choice, made so GitHub Pages
+could host the dashboard without a paid plan) — `config/paid_overrides.yaml`
+and any future `config/counterparty_map.yaml` entries are real business
+data and now visible to anyone, permanently, via git history. Nothing in
+`.env`/the service account key is ever committed, but be mindful of what
+goes into those two config files going forward.
 
 Bank data comes straight from Odoo's own bank feed (Accounting > Bank &
 Cash), not a separate aggregator — Odoo already has a live connection to
@@ -59,17 +66,12 @@ caps how far back transactions are pulled on that first run.
   `config/counterparty_map.yaml` (exact name → category), which always wins
   over the keyword rules.
 
-### 5. Netlify (dashboard website only)
-1. Create a free account at netlify.com (or reuse an existing one).
-2. Create a new empty site — "Add new site" → any option that doesn't
-   require connecting a git repo yet is fine, since deployment happens via
-   Netlify's Deploy API directly from Python (`src/netlify_deploy.py`), not
-   Netlify's own git integration or the Node-based CLI.
-   Note the **Site ID** (Site settings → General → Site details).
-3. Generate a Personal Access Token: User settings → Applications →
-   Personal access tokens → New access token.
-4. Set `NETLIFY_AUTH_TOKEN` (the token) and `NETLIFY_SITE_ID` in `.env` for
-   a local test deploy, and as GitHub repo secrets for the scheduled job.
+### 5. GitHub Pages (dashboard website only)
+1. Repo must be public (Settings → Danger Zone → Change visibility).
+2. Settings → Pages → Build and deployment → Source → **GitHub Actions**
+   (not "Deploy from a branch").
+3. That's it — no extra secrets needed; `daily_dashboard.yml` deploys
+   directly from the Action run via `actions/deploy-pages`.
 
 ## Local run
 
@@ -78,13 +80,13 @@ cp .env.example .env   # fill in real values
 pip install -r requirements.txt
 python main.py             # cash flow register
 python main_exec.py        # executive report
-python main_dashboard.py   # generates site/index.html — deploy separately, see below
+python main_dashboard.py   # generates site/index.html locally (GitHub Pages deploy only happens in CI)
 ```
 
 ## Scheduled run
 
-Both workflows use the same GitHub repo secrets (Settings > Secrets and
-variables > Actions) — no extra setup needed for the second one:
+All three workflows use the same GitHub repo secrets (Settings > Secrets and
+variables > Actions):
 
 - `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_API_KEY`, `ODOO_BANK_JOURNAL_ID`
 - `GOOGLE_SERVICE_ACCOUNT_JSON` (paste the full service account JSON key content)
@@ -97,10 +99,9 @@ variables > Actions) — no extra setup needed for the second one:
 
 - `.github/workflows/daily_cashflow.yml` — 06:00 UTC
 - `.github/workflows/daily_executive_report.yml` — 06:15 UTC
-- `.github/workflows/daily_dashboard.yml` — 06:30 UTC, additionally needs
-  `NETLIFY_AUTH_TOKEN` and `NETLIFY_SITE_ID` as repo secrets (this job
-  doesn't touch Google Sheets at all, so none of the `GOOGLE_*` secrets are
-  needed for it specifically)
+- `.github/workflows/daily_dashboard.yml` — 06:30 UTC, deploys straight to
+  GitHub Pages — doesn't touch Google Sheets at all, so none of the
+  `GOOGLE_*` secrets are needed for it specifically
 
 ## How it works
 
@@ -139,7 +140,7 @@ append-only ledger) and recreates their charts, sourced from `sale.order`
   yesterday. Margins/COGS are intentionally not included — not reliably
   derivable from current data without deeper product-cost analysis.
 
-### Dashboard website (`main_dashboard.py` → `site/index.html`, deployed to Netlify)
+### Dashboard website (`main_dashboard.py` → `site/index.html`, deployed to GitHub Pages)
 Same underlying data and figures as the executive report, rendered as a
 standalone static page (`templates/dashboard_template.html` + `src/dashboard.py`)
 instead of Google Sheet tabs — no live connector pulls data into the page
@@ -147,7 +148,7 @@ itself, since there's no Odoo/Sheets connector available to a hosted page;
 each deploy is a fresh snapshot baked in at generation time. This is the
 one meant for sharing outside the company (e.g. shareholders), since it
 doesn't require any Odoo or Google account access to view — whoever holds
-the Netlify URL can see it.
+the Pages URL can see it.
 
 ### Reporting correction: `config/paid_overrides.yaml`
 Vendor bills/customer invoices confirmed paid via the real bank statement

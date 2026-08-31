@@ -2,5 +2,4 @@ python-dotenv>=1.0
 gspread>=6.0
 google-auth>=2.30
 PyYAML>=6.0
-requests>=2.31
 truststore>=0.9; python_version >= "3.10"
