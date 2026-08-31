@@ -10,9 +10,10 @@
  * re-run the "Daily Dashboard Deploy" workflow.
  *
  * Required setup (done once, in the Cloudflare dashboard, not here):
- * - Secret `GITHUB_TOKEN`: a fine-grained GitHub PAT scoped ONLY to the
+ * - Secret `GITHUB_TOKEN1`: a fine-grained GitHub PAT scoped ONLY to the
  *   Ultima-industrial/reporting repo, with "Actions: Read and write" and
- *   nothing else.
+ *   nothing else. (Named GITHUB_TOKEN1, not GITHUB_TOKEN, because that name
+ *   was already taken by an earlier, truncated/exposed token attempt.)
  * - KV namespace binding `SYNC_KV`: used to enforce the cooldown below so a
  *   public visitor can't spam GitHub Actions runs.
  */
@@ -61,7 +62,7 @@ export default {
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+          Authorization: `Bearer ${env.GITHUB_TOKEN1}`,
           Accept: "application/vnd.github+json",
           "User-Agent": "ultima-pulse-sync-worker",
           "Content-Type": "application/json",

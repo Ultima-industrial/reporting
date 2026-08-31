@@ -91,10 +91,12 @@ visitors) before asking GitHub to re-run `daily_dashboard.yml`.
 4. Create a **fine-grained** GitHub PAT (github.com/settings/personal-access-tokens/new)
    scoped **only** to `Ultima-industrial/reporting`, with **Actions: Read
    and write** permission and nothing else.
-5. Add it as a Worker secret — Worker → Settings → Variables →
-   Environment Variables → Add → name `GITHUB_TOKEN`, paste the token,
-   click **Encrypt**. (The token only ever goes into Cloudflare, never
-   into this repo or chat.)
+5. Add it as a Worker secret — Worker → Settings → under "Runtime
+   variables and secrets" → **Add variable** → set Type to **Secret** →
+   name `GITHUB_TOKEN1`, paste the token, **Deploy**. (The token only
+   ever goes into Cloudflare, never into this repo or chat. Named
+   `GITHUB_TOKEN1` rather than `GITHUB_TOKEN` since that name was already
+   taken by an earlier attempt.)
 6. Note the Worker's URL (`https://<name>.<account>.workers.dev`) and put
    it in `templates/dashboard_template.html` as `SYNC_ENDPOINT` (replacing
    the `REPLACE_WITH_WORKER_URL` placeholder), then regenerate/redeploy
