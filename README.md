@@ -73,6 +73,33 @@ caps how far back transactions are pulled on that first run.
 3. That's it — no extra secrets needed; `daily_dashboard.yml` deploys
    directly from the Action run via `actions/deploy-pages`.
 
+### 6. "Sync now" button (optional — dashboard is public, so this needs a secure proxy)
+The dashboard's "Sync now" button can't call GitHub's API directly — that
+would require embedding a write-scoped GitHub token in a public page's JS,
+which anyone viewing the page could extract. Instead it calls a small
+Cloudflare Worker (`cloudflare/sync-worker.js`) that holds the token
+server-side and rate-limits requests (5 min cooldown, shared across all
+visitors) before asking GitHub to re-run `daily_dashboard.yml`.
+
+1. Create a free account at cloudflare.com.
+2. Workers & Pages → Create → Create Worker → give it a name (e.g.
+   `ultima-pulse-sync`) → deploy the default template, then **Edit code**
+   and replace it with the contents of `cloudflare/sync-worker.js`.
+3. Create a KV namespace (Workers & Pages → KV → Create) and bind it to
+   the Worker: Worker → Settings → Variables → KV Namespace Bindings →
+   variable name `SYNC_KV`, pointing at that namespace.
+4. Create a **fine-grained** GitHub PAT (github.com/settings/personal-access-tokens/new)
+   scoped **only** to `Ultima-industrial/reporting`, with **Actions: Read
+   and write** permission and nothing else.
+5. Add it as a Worker secret — Worker → Settings → Variables →
+   Environment Variables → Add → name `GITHUB_TOKEN`, paste the token,
+   click **Encrypt**. (The token only ever goes into Cloudflare, never
+   into this repo or chat.)
+6. Note the Worker's URL (`https://<name>.<account>.workers.dev`) and put
+   it in `templates/dashboard_template.html` as `SYNC_ENDPOINT` (replacing
+   the `REPLACE_WITH_WORKER_URL` placeholder), then regenerate/redeploy
+   the dashboard.
+
 ## Local run
 
 ```bash
