@@ -179,7 +179,7 @@ class ExecSheetsWriter:
         status_header = ["Status", "Count"]
         self._write_block(ws, 1, 13, [status_header] + status_rows)
 
-        cust_header = ["Customer", "Total (30d)"]
+        cust_header = ["Customer", "Total (MTD, invoiced)"]
         self._write_block(ws, 1, 16, [cust_header] + top_customer_rows)
 
         chart_row = max(len(orders_rows), len(revenue_trend_rows), len(status_rows), len(top_customer_rows)) + 4

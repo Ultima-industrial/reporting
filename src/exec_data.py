@@ -122,10 +122,15 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     for label, _ in status_today:
         status_breakdown[label] += 1
 
+    # Same basis as Revenue (MTD invoiced) — not order value, and not a
+    # trailing 30-day window — so this reconciles with the Revenue figure
+    # instead of implying more revenue than was actually invoiced.
     customer_totals = defaultdict(float)
-    for o in orders:
-        if o["state"] in ("sale", "done"):
-            customer_totals[o["partner_name"]] += o["amount_total"]
+    for inv in invoices_raw:
+        d = _date_part(inv.get("invoice_date"))
+        if d and month_start <= d <= today:
+            name = inv["partner_id"][1] if inv.get("partner_id") else "(unknown)"
+            customer_totals[name] += float(inv["amount_total"])
     top_customers = sorted(customer_totals.items(), key=lambda kv: -kv[1])[:5]
 
     # --- Finance: bank cash flow ---

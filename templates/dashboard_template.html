@@ -213,7 +213,7 @@
       </div>
 
       <div>
-        <p class="block-title">Top customers &mdash; 30 days</p>
+        <p class="block-title">Top customers &mdash; MTD, invoiced</p>
         <div class="barlist" id="topCustomers"></div>
       </div>
     </section>
@@ -389,7 +389,7 @@ document.getElementById('balanceCaption').innerHTML =
 // ---------- Top customers ----------
 (function renderCustomers(){
   const el = document.getElementById('topCustomers');
-  if (!DATA.top_customers.length) { el.innerHTML = `<span class="sub" style="color:var(--text-faint); font-size:.8rem;">No confirmed orders in the last 30 days.</span>`; return; }
+  if (!DATA.top_customers.length) { el.innerHTML = `<span class="sub" style="color:var(--text-faint); font-size:.8rem;">No invoiced revenue this month yet.</span>`; return; }
   const max = Math.max(...DATA.top_customers.map(c=>c[1]));
   el.innerHTML = DATA.top_customers.map(([name, amt]) => `
     <div class="row">
