@@ -285,7 +285,7 @@ document.getElementById('narrative').textContent = DATA.narrative;
 // ---------- Sync now ----------
 // Set once the Cloudflare Worker proxy is deployed (see cloudflare/sync-worker.js) —
 // this endpoint never sees a GitHub token itself, it just asks the Worker to trigger one.
-const SYNC_ENDPOINT = 'REPLACE_WITH_WORKER_URL';
+const SYNC_ENDPOINT = 'https://ultima-pulse-sync.lloyd-casavecchia.workers.dev/';
 
 (function initSyncButton(){
   const btn = document.getElementById('syncBtn');
