@@ -155,10 +155,15 @@ class ExecSheetsWriter:
 
         header = ["Metric", "As of Today", "As of Yesterday", "Change", "Notes"]
         self._write_block(ws, 6, 1, [header] + key_figures_rows)
+        last_row = 6 + len(key_figures_rows)
         # Revenue/Cash Flow/Overdue Receivables are money (2dp); New/Delayed Orders are counts (integer).
         ws.format("B7:D7", {"numberFormat": {"type": "NUMBER", "pattern": "#,##0.00"}})
         ws.format("B8:D9", {"numberFormat": {"type": "NUMBER", "pattern": "#,##0"}})
-        ws.format(f"B10:D{6 + len(key_figures_rows)}", {"numberFormat": {"type": "NUMBER", "pattern": "#,##0.00"}})
+        ws.format(f"B10:D{last_row - 1}", {"numberFormat": {"type": "NUMBER", "pattern": "#,##0.00"}})
+        # Gross Profit % is always the last row — already a percentage number
+        # (33.8, not 0.338), so a plain "%"-suffixed pattern, not Sheets' "0.0%"
+        # which would multiply by 100 and show 3380.0%.
+        ws.format(f"B{last_row}", {"numberFormat": {"type": "NUMBER", "pattern": '0.0"%"'}})
 
         if caveats:
             caveat_rows = [["Data caveats"]] + [[c] for c in caveats]

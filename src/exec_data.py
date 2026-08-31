@@ -101,13 +101,26 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     new_orders_today = mtd_count([o["order_date"] for o in orders], today)
     new_orders_yesterday = mtd_count([o["order_date"] for o in orders], yesterday)
 
-    # Revenue is actual invoiced amounts (account.move), not sale-order value —
-    # a sale order being confirmed doesn't mean it's been invoiced/recognized yet.
+    # Revenue is actual invoiced amounts (account.move), net of VAT — a sale
+    # order being confirmed doesn't mean it's been invoiced/recognized yet,
+    # and amount_total mixes VAT-inclusive and VAT-exempt invoices inconsistently.
     invoices_raw = odoo.posted_customer_invoices(from_date=fetch_start.isoformat())
-    invoiced = [(_date_part(inv["invoice_date"]), float(inv["amount_total"])) for inv in invoices_raw if inv.get("invoice_date")]
+    invoiced = [(_date_part(inv["invoice_date"]), float(inv["amount_untaxed"])) for inv in invoices_raw if inv.get("invoice_date")]
     revenue_today = mtd_sum(invoiced, today)
     revenue_yesterday = mtd_sum(invoiced, yesterday)
     revenue_trend = _daily_series(invoiced, trend_start, today)
+
+    # Gross profit — only over invoice lines with real cost data (see
+    # OdooClient.invoiced_lines_with_cost). A blended figure across
+    # everything would be skewed by products with no cost ever recorded in
+    # Odoo (which look like 0 cost / 100% margin, not genuinely free).
+    margin_lines = odoo.invoiced_lines_with_cost(from_date=month_start.isoformat())
+    gp_revenue_total = sum(l["revenue"] for l in margin_lines)
+    costed_lines = [l for l in margin_lines if l["unit_cost"]]
+    gp_revenue_costed = sum(l["revenue"] for l in costed_lines)
+    gp_cost_costed = sum(l["unit_cost"] * l["quantity"] for l in costed_lines)
+    gp_percent = ((gp_revenue_costed - gp_cost_costed) / gp_revenue_costed * 100) if gp_revenue_costed else None
+    gp_coverage_percent = (gp_revenue_costed / gp_revenue_total * 100) if gp_revenue_total else 0.0
 
     status_today = [(_order_status(o, today), o) for o in orders]
     delayed_today = [o for label, o in status_today if label == "Delayed"]
@@ -130,7 +143,7 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         d = _date_part(inv.get("invoice_date"))
         if d and month_start <= d <= today:
             name = inv["partner_id"][1] if inv.get("partner_id") else "(unknown)"
-            customer_totals[name] += float(inv["amount_total"])
+            customer_totals[name] += float(inv["amount_untaxed"])
     top_customers = sorted(customer_totals.items(), key=lambda kv: -kv[1])[:5]
 
     # --- Finance: bank cash flow ---
@@ -198,6 +211,14 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         "(due_date < yesterday) — it slightly undercounts anything paid between yesterday and today, "
         "since Odoo only exposes currently-open invoices, not a historical snapshot."
     )
+    if gp_revenue_total and gp_coverage_percent < 99.95:
+        caveats.append(
+            f"Gross Profit % is computed only over the {gp_coverage_percent:.0f}% of this month's invoiced "
+            f"revenue that has real product cost data in Odoo — the remaining "
+            f"€{gp_revenue_total - gp_revenue_costed:,.2f} has no cost recorded (shows as 0 cost / 100% "
+            f"margin, which is a data gap, not a genuinely free sale) and is excluded rather than included "
+            f"at a misleadingly inflated margin."
+        )
 
     overdue_payables_today = [b for b in bills if b["due_date"] and b["due_date"] < today]
 
@@ -224,6 +245,10 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "status_breakdown": dict(status_breakdown),
             "revenue_trend": revenue_trend,
             "top_customers": top_customers,
+            "gp_percent": gp_percent,
+            "gp_coverage_percent": gp_coverage_percent,
+            "gp_revenue_costed": gp_revenue_costed,
+            "gp_revenue_total": gp_revenue_total,
         },
         "finance": {
             "latest_balance": latest_balance,

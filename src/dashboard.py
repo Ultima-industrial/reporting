@@ -40,6 +40,7 @@ def _build_payload(data):
             "latest_balance": f["latest_balance"],
             "open_payables_total": open_payables_total, "open_payables_count": len(f["open_bills"]),
             "open_receivables_total": sum(float(i["amount_residual"]) for i in f["open_invoices"]), "open_receivables_count": len(f["open_invoices"]),
+            "gp_percent": s["gp_percent"], "gp_coverage_percent": s["gp_coverage_percent"],
         },
         "revenue_trend": [[d.isoformat(), amt] for d, amt in s["revenue_trend"]],
         "balance_trend": [[d.isoformat(), bal] for d, bal in f["balance_trend"]],

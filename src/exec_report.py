@@ -28,9 +28,12 @@ def _narrative(data):
         total = sum(float(i["amount_residual"]) for i in f["overdue_receivables_today"])
         parts.append(f"{len(f['overdue_receivables_today'])} customer invoice(s) totaling €{_fmt_money(total)} are overdue.")
 
+    gp_part = ""
+    if s["gp_percent"] is not None:
+        gp_part = f", {s['gp_percent']:.1f}% GP (on {s['gp_coverage_percent']:.0f}% of MTD revenue with cost data)"
     parts.append(
-        f"Month-to-date: {s['new_orders_today']} new order(s), €{_fmt_money(s['revenue_today'])} invoiced revenue "
-        f"(vs €{_fmt_money(s['revenue_yesterday'])} through yesterday)."
+        f"Month-to-date: {s['new_orders_today']} new order(s), €{_fmt_money(s['revenue_today'])} invoiced revenue"
+        f"{gp_part} (vs €{_fmt_money(s['revenue_yesterday'])} through yesterday)."
     )
     parts.append(
         f"Cash position is €{_fmt_money(f['latest_balance'])}, with {_fmt_eur(f['cash_flow_today'])} net movement "
@@ -51,9 +54,9 @@ def _key_figures_rows(data):
     f = data["finance"]
     overdue_today_total = sum(float(i["amount_residual"]) for i in f["overdue_receivables_today"])
 
-    return [
+    rows = [
         ["Revenue (MTD, invoiced)", s["revenue_today"], s["revenue_yesterday"],
-         s["revenue_today"] - s["revenue_yesterday"], "Posted customer invoices, month-to-date"],
+         s["revenue_today"] - s["revenue_yesterday"], "Posted customer invoices, month-to-date, net of VAT"],
         ["New Orders (MTD)", s["new_orders_today"], s["new_orders_yesterday"],
          s["new_orders_today"] - s["new_orders_yesterday"], "Sale orders created this month so far"],
         ["Delayed Orders", len(s["delayed_orders"]), s["delayed_orders_count_yesterday"],
@@ -63,6 +66,14 @@ def _key_figures_rows(data):
         ["Overdue Receivables", overdue_today_total, f["overdue_receivables_yesterday_total"],
          overdue_today_total - f["overdue_receivables_yesterday_total"], "Yesterday figure is approximate (see caveats)"],
     ]
+    if s["gp_percent"] is not None:
+        rows.append([
+            "Gross Profit %", round(s["gp_percent"], 1), "", "",
+            f"Only {s['gp_coverage_percent']:.0f}% of MTD revenue has cost data in Odoo (see caveats)",
+        ])
+    else:
+        rows.append(["Gross Profit %", "N/A", "", "", "No invoice lines this month have cost data in Odoo"])
+    return rows
 
 
 def _orders_rows(data):

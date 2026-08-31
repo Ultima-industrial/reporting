@@ -255,7 +255,7 @@
 
   <footer>
     <p><b>Overdue receivables &mdash; yesterday</b> is approximated from today's open-invoice snapshot (Odoo only exposes currently-open invoices, not a historical one), so it slightly undercounts anything paid since yesterday.</p>
-    <p><b>Margins/COGS</b> are intentionally excluded &mdash; not reliably derivable from current data without deeper product-cost analysis.</p>
+    <p id="gpCaveat"></p>
     <p>Source: Odoo (sale orders, bank feed, open invoices/bills), read-only. Ask for a refresh any time to pull a new snapshot.</p>
   </footer>
 
@@ -270,6 +270,18 @@ const fmtDateLong = iso => { const d = new Date(iso+'T00:00:00'); return d.toLoc
 
 document.getElementById('metaDate').textContent = fmtDateLong(DATA.today);
 document.getElementById('narrative').textContent = DATA.narrative;
+
+(function renderGpCaveat(){
+  const el = document.getElementById('gpCaveat');
+  const gp = DATA.kpis.gp_percent;
+  if (gp === null || gp === undefined) {
+    el.innerHTML = '<b>Gross Profit %</b> is not shown — no invoiced line items this month have product cost data recorded in Odoo.';
+  } else if (DATA.kpis.gp_coverage_percent < 99.95) {
+    el.innerHTML = `<b>Gross Profit %</b> is computed only over the ${DATA.kpis.gp_coverage_percent.toFixed(0)}% of this month's invoiced revenue that has real product cost data in Odoo — the rest has no cost recorded (shows as 0 cost / 100% margin, which is a data gap, not a genuinely free sale) and is excluded rather than included at a misleadingly inflated margin.`;
+  } else {
+    el.remove();
+  }
+})();
 
 // ---------- Banner ----------
 (function renderBanner(){
@@ -310,6 +322,9 @@ document.getElementById('narrative').textContent = DATA.narrative;
     {label:'Cash Flow (MTD, net)', value: fmtMoney(k.cash_flow_today), delta: deltaChip(k.cash_flow_today - k.cash_flow_yesterday, false), sub:`${fmtMoney(k.cash_flow_yesterday)} through yesterday`},
     {label:'Overdue Receivables', value: fmtMoney(k.overdue_receivables_today), delta: deltaChip(k.overdue_receivables_today - k.overdue_receivables_yesterday, true), sub:'yesterday figure approximate', neg: k.overdue_receivables_today>0},
   ];
+  if (k.gp_percent !== null && k.gp_percent !== undefined) {
+    cards.push({label:'Gross Profit %', value: k.gp_percent.toFixed(1) + '%', delta:'', sub:`on ${k.gp_coverage_percent.toFixed(0)}% of MTD revenue with cost data`});
+  }
   document.getElementById('kpiRow').innerHTML = cards.map(c => `
     <div class="kpi">
       <div class="label">${c.label}</div>

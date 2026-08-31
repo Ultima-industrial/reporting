@@ -93,15 +93,56 @@ class OdooClient:
     def posted_customer_invoices(self, from_date=None):
         """All posted customer invoices (paid or not) with an invoice_date on
         or after from_date — used for actual invoiced revenue, unlike
-        open_customer_invoices() which only returns currently-unpaid ones."""
+        open_customer_invoices() which only returns currently-unpaid ones.
+        amount_untaxed (net of VAT) is the revenue figure — amount_total
+        mixes VAT-inclusive and VAT-exempt invoices inconsistently."""
         domain = [["move_type", "=", "out_invoice"], ["state", "=", "posted"]]
         if from_date:
             domain.append(["invoice_date", ">=", from_date])
         return self._search_read(
             "account.move",
             domain,
-            ["name", "partner_id", "invoice_date", "amount_total"],
+            ["name", "partner_id", "invoice_date", "amount_untaxed"],
         )
+
+    def invoiced_lines_with_cost(self, from_date=None):
+        """Posted customer invoice product lines with their originating sale
+        order line's per-unit cost (sale.order.line.purchase_price, from the
+        sale_margin module), for computing gross profit. purchase_price is
+        0.0 both for genuinely free items and for products with no cost ever
+        recorded in Odoo — those two cases are indistinguishable from this
+        field alone, so callers should treat 0.0 as "no reliable cost data"
+        rather than "zero cost", per how Ultima Industrial's data actually
+        looks (real products with real costs sometimes show 0.0 here)."""
+        domain = [
+            ["move_id.move_type", "=", "out_invoice"],
+            ["move_id.state", "=", "posted"],
+            ["display_type", "=", "product"],
+        ]
+        if from_date:
+            domain.append(["move_id.invoice_date", ">=", from_date])
+        move_lines = self._search_read(
+            "account.move.line", domain,
+            ["move_id", "product_id", "quantity", "price_subtotal", "sale_line_ids"],
+        )
+
+        sale_line_ids = sorted({sid for ml in move_lines for sid in ml["sale_line_ids"]})
+        unit_cost_by_sale_line = {}
+        if sale_line_ids:
+            sale_lines = self._search_read("sale.order.line", [["id", "in", sale_line_ids]], ["purchase_price"])
+            unit_cost_by_sale_line = {sl["id"]: sl["purchase_price"] for sl in sale_lines}
+
+        result = []
+        for ml in move_lines:
+            unit_cost = unit_cost_by_sale_line.get(ml["sale_line_ids"][0]) if ml["sale_line_ids"] else None
+            result.append({
+                "move_id": ml["move_id"],
+                "product_id": ml["product_id"],
+                "quantity": float(ml["quantity"]),
+                "revenue": float(ml["price_subtotal"]),
+                "unit_cost": unit_cost,
+            })
+        return result
 
     def sales_orders(self, from_date=None):
         """Sale orders (quotations + confirmed), excluding cancelled, with the
