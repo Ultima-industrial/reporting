@@ -68,9 +68,15 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     yesterday = today - timedelta(days=1)
     trend_start = today - timedelta(days=TREND_DAYS - 1)
     month_start = today.replace(day=1)
-    # Orders/invoices fetch window must cover both the trend chart and
-    # month-to-date sums — whichever of the two starts earlier.
+    year_start = today.replace(month=1, day=1)
+    last_month_end = month_start - timedelta(days=1)
+    last_month_start = last_month_end.replace(day=1)
+    # Orders fetch window must cover both the trend chart and month-to-date
+    # sums — whichever of the two starts earlier.
     fetch_start = min(trend_start, month_start)
+    # Invoices need a wider window — Last Month and Year-to-Date revenue go
+    # further back than the order/trend window does.
+    revenue_fetch_start = min(fetch_start, last_month_start, year_start)
 
     caveats = []
 
@@ -104,10 +110,12 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     # Revenue is actual invoiced amounts (account.move), net of VAT — a sale
     # order being confirmed doesn't mean it's been invoiced/recognized yet,
     # and amount_total mixes VAT-inclusive and VAT-exempt invoices inconsistently.
-    invoices_raw = odoo.posted_customer_invoices(from_date=fetch_start.isoformat())
+    invoices_raw = odoo.posted_customer_invoices(from_date=revenue_fetch_start.isoformat())
     invoiced = [(_date_part(inv["invoice_date"]), float(inv["amount_untaxed"])) for inv in invoices_raw if inv.get("invoice_date")]
     revenue_today = mtd_sum(invoiced, today)
     revenue_yesterday = mtd_sum(invoiced, yesterday)
+    revenue_last_month = sum(amount for d, amount in invoiced if last_month_start <= d <= last_month_end)
+    revenue_ytd = sum(amount for d, amount in invoiced if year_start <= d <= today)
     revenue_trend = _daily_series(invoiced, trend_start, today)
 
     # Gross profit — only over invoice lines with real cost data (see
@@ -237,6 +245,8 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "orders": orders,
             "revenue_today": revenue_today,
             "revenue_yesterday": revenue_yesterday,
+            "revenue_last_month": revenue_last_month,
+            "revenue_ytd": revenue_ytd,
             "new_orders_today": new_orders_today,
             "new_orders_yesterday": new_orders_yesterday,
             "delayed_orders": delayed_today,

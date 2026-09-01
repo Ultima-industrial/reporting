@@ -24,9 +24,30 @@ class ExecSheetsWriter:
             ws.clear()
             if ws.col_count < cols:
                 ws.add_cols(cols - ws.col_count)
+            self._unmerge_all(ws)
         except gspread.WorksheetNotFound:
             ws = self.sheet.add_worksheet(title=title, rows=rows, cols=cols)
         return ws
+
+    def _unmerge_all(self, worksheet):
+        """ws.clear() only clears cell values, not merges — a merge from an
+        earlier run's layout (e.g. a header merged across A14:F14 when the
+        table was shorter) silently blocks writes to the non-master cells of
+        that range forever after, even once later rows land there instead.
+        Unmerging the whole sheet before every write avoids that entirely."""
+        self.sheet.batch_update({
+            "requests": [{
+                "unmergeCells": {
+                    "range": {
+                        "sheetId": worksheet.id,
+                        "startRowIndex": 0,
+                        "endRowIndex": worksheet.row_count,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": worksheet.col_count,
+                    }
+                }
+            }]
+        })
 
     def _delete_charts(self, worksheet):
         meta = self.sheet.fetch_sheet_metadata()
@@ -146,6 +167,15 @@ class ExecSheetsWriter:
         }]
         self.sheet.batch_update({"requests": requests})
 
+    _NUMBER_FORMATS = {
+        "money": {"type": "NUMBER", "pattern": "#,##0.00"},
+        "int": {"type": "NUMBER", "pattern": "#,##0"},
+        # Percent values here are already 0-100 (33.8, not 0.338), so a plain
+        # "%"-suffixed pattern, not Sheets' "0.0%" which would multiply by
+        # 100 and show 3380.0%.
+        "percent": {"type": "NUMBER", "pattern": '0.0"%"'},
+    }
+
     def write_summary(self, narrative, key_figures_rows, caveats):
         ws = self._get_or_create_tab("Summary", cols=6, rows=40)
         self._delete_charts(ws)
@@ -154,16 +184,15 @@ class ExecSheetsWriter:
         ws.format("A1:F4", {"wrapStrategy": "WRAP", "verticalAlignment": "TOP"})
 
         header = ["Metric", "As of Today", "As of Yesterday", "Change", "Notes"]
-        self._write_block(ws, 6, 1, [header] + key_figures_rows)
-        last_row = 6 + len(key_figures_rows)
-        # Revenue/Cash Flow/Overdue Receivables are money (2dp); New/Delayed Orders are counts (integer).
-        ws.format("B7:D7", {"numberFormat": {"type": "NUMBER", "pattern": "#,##0.00"}})
-        ws.format("B8:D9", {"numberFormat": {"type": "NUMBER", "pattern": "#,##0"}})
-        ws.format(f"B10:D{last_row - 1}", {"numberFormat": {"type": "NUMBER", "pattern": "#,##0.00"}})
-        # Gross Profit % is always the last row — already a percentage number
-        # (33.8, not 0.338), so a plain "%"-suffixed pattern, not Sheets' "0.0%"
-        # which would multiply by 100 and show 3380.0%.
-        ws.format(f"B{last_row}", {"numberFormat": {"type": "NUMBER", "pattern": '0.0"%"'}})
+        # Each row's last element is a format hint ('money'/'int'/'percent'),
+        # not a sheet column — strip it before writing, apply it per-row after.
+        display_rows = [row[:5] for row in key_figures_rows]
+        self._write_block(ws, 6, 1, [header] + display_rows)
+        for i, row in enumerate(key_figures_rows):
+            sheet_row = 7 + i
+            fmt = self._NUMBER_FORMATS.get(row[5])
+            if fmt:
+                ws.format(f"B{sheet_row}:D{sheet_row}", {"numberFormat": fmt})
 
         if caveats:
             caveat_rows = [["Data caveats"]] + [[c] for c in caveats]

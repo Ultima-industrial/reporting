@@ -49,30 +49,37 @@ def _key_figures_rows(data):
     """Returns raw numeric values (not pre-formatted strings) so Sheets stores
     them as real numbers — formatting is applied afterward via cell number
     format, not by embedding "+"/comma-formatted text (which Sheets'
-    USER_ENTERED parser can misread as a broken formula)."""
+    USER_ENTERED parser can misread as a broken formula).
+
+    Each row carries its own format hint ('money'/'int'/'percent') as a 6th
+    element so the writer can format it correctly without depending on which
+    row number it happens to land on — that broke twice already as rows
+    were added."""
     s = data["sales"]
     f = data["finance"]
     overdue_today_total = sum(float(i["amount_residual"]) for i in f["overdue_receivables_today"])
 
     rows = [
         ["Revenue (MTD, invoiced)", s["revenue_today"], s["revenue_yesterday"],
-         s["revenue_today"] - s["revenue_yesterday"], "Posted customer invoices, month-to-date, net of VAT"],
+         s["revenue_today"] - s["revenue_yesterday"], "Posted customer invoices, month-to-date, net of VAT", "money"],
+        ["Revenue (Last Month)", s["revenue_last_month"], "", "", "Full previous calendar month, invoiced, net of VAT", "money"],
+        ["Revenue (Year-to-Date)", s["revenue_ytd"], "", "", "Jan 1 through today, invoiced, net of VAT", "money"],
         ["New Orders (MTD)", s["new_orders_today"], s["new_orders_yesterday"],
-         s["new_orders_today"] - s["new_orders_yesterday"], "Sale orders created this month so far"],
+         s["new_orders_today"] - s["new_orders_yesterday"], "Sale orders created this month so far", "int"],
         ["Delayed Orders", len(s["delayed_orders"]), s["delayed_orders_count_yesterday"],
-         len(s["delayed_orders"]) - s["delayed_orders_count_yesterday"], "Past commitment date, not yet fulfilled"],
+         len(s["delayed_orders"]) - s["delayed_orders_count_yesterday"], "Past commitment date, not yet fulfilled", "int"],
         ["Cash Flow (MTD, net)", f["cash_flow_today"], f["cash_flow_yesterday"],
-         f["cash_flow_today"] - f["cash_flow_yesterday"], "Net bank movement, month-to-date"],
+         f["cash_flow_today"] - f["cash_flow_yesterday"], "Net bank movement, month-to-date", "money"],
         ["Overdue Receivables", overdue_today_total, f["overdue_receivables_yesterday_total"],
-         overdue_today_total - f["overdue_receivables_yesterday_total"], "Yesterday figure is approximate (see caveats)"],
+         overdue_today_total - f["overdue_receivables_yesterday_total"], "Yesterday figure is approximate (see caveats)", "money"],
     ]
     if s["gp_percent"] is not None:
         rows.append([
             "Gross Profit %", round(s["gp_percent"], 1), "", "",
-            f"Only {s['gp_coverage_percent']:.0f}% of MTD revenue has cost data in Odoo (see caveats)",
+            f"Only {s['gp_coverage_percent']:.0f}% of MTD revenue has cost data in Odoo (see caveats)", "percent",
         ])
     else:
-        rows.append(["Gross Profit %", "N/A", "", "", "No invoice lines this month have cost data in Odoo"])
+        rows.append(["Gross Profit %", "N/A", "", "", "No invoice lines this month have cost data in Odoo", "percent"])
     return rows
 
 
