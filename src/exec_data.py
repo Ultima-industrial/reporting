@@ -14,6 +14,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 TREND_DAYS = 30
+FORECAST_MAX_DAYS = 180
 AGING_BUCKETS = ["Not yet due", "1-30 days overdue", "31-60 days overdue", "61-90 days overdue", "90+ days overdue"]
 
 
@@ -63,6 +64,38 @@ def _daily_series(dated_amounts, start, end):
     return series
 
 
+def _forecast_series(latest_balance, today, bills, invoices, max_days=FORECAST_MAX_DAYS):
+    """Draft forward cash flow projection: current balance, walked forward
+    day by day as open bills (out) and invoices (in) hit their due dates.
+    Nothing else is modeled yet — no new sales, no recurring costs, no
+    payment-timing behavior (customers who pay late, suppliers paid early).
+    Anything already overdue is assumed to land "today" rather than on its
+    original (past) due date, since projecting a date before today doesn't
+    make sense for a forward chart — still expected, just timing unknown."""
+    events = defaultdict(float)
+    max_date = today
+    for b in bills:
+        if b["due_date"]:
+            d = max(b["due_date"], today)
+            events[d] -= float(b["amount_residual"])
+            max_date = max(max_date, d)
+    for i in invoices:
+        if i["due_date"]:
+            d = max(i["due_date"], today)
+            events[d] += float(i["amount_residual"])
+            max_date = max(max_date, d)
+    max_date = min(max_date, today + timedelta(days=max_days))
+
+    series = []
+    running = latest_balance
+    d = today
+    while d <= max_date:
+        running += events.get(d, 0.0)
+        series.append((d, running))
+        d += timedelta(days=1)
+    return series
+
+
 def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date, today=None):
     today = today or date.today()
     yesterday = today - timedelta(days=1)
@@ -106,6 +139,19 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
 
     new_orders_today = mtd_count([o["order_date"] for o in orders], today)
     new_orders_yesterday = mtd_count([o["order_date"] for o in orders], yesterday)
+
+    # Quotes = sale orders not yet confirmed (state draft/sent — see
+    # _order_status), by value rather than count, raised this month so far.
+    def quotes_value(as_of):
+        if as_of < month_start:
+            return 0.0
+        return sum(
+            o["amount_total"] for o in orders
+            if o["state"] in ("draft", "sent") and month_start <= o["order_date"] <= as_of
+        )
+
+    quotes_raised_mtd = quotes_value(today)
+    quotes_raised_mtd_yesterday = quotes_value(yesterday)
 
     # Revenue is actual invoiced amounts (account.move), net of VAT — a sale
     # order being confirmed doesn't mean it's been invoiced/recognized yet,
@@ -230,6 +276,19 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
 
     overdue_payables_today = [b for b in bills if b["due_date"] and b["due_date"] < today]
 
+    forecast_trend = _forecast_series(latest_balance, today, bills, invoices)
+    caveats.append(
+        "Cash Flow Forecast is a draft: it only projects known open vendor bill and customer invoice due "
+        "dates against the current balance — no new sales, recurring costs, or realistic payment-timing "
+        "behavior are modeled yet. Anything already overdue is assumed to land today rather than on its "
+        "original due date."
+    )
+    caveats.append(
+        "Quotes Raised 'yesterday' uses each order's CURRENT state, not its state as of yesterday — a "
+        "quote raised yesterday but already confirmed into a sale order by today would drop out of both "
+        "figures rather than staying counted in yesterday's."
+    )
+
     receivables_aging = defaultdict(float)
     for i in invoices:
         receivables_aging[_aging_bucket(i["due_date"], today)] += float(i["amount_residual"])
@@ -259,6 +318,8 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "gp_coverage_percent": gp_coverage_percent,
             "gp_revenue_costed": gp_revenue_costed,
             "gp_revenue_total": gp_revenue_total,
+            "quotes_raised_mtd": quotes_raised_mtd,
+            "quotes_raised_mtd_yesterday": quotes_raised_mtd_yesterday,
         },
         "finance": {
             "latest_balance": latest_balance,
@@ -276,5 +337,6 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "open_invoices": invoices,
             "receivables_aging": dict(receivables_aging),
             "payables_aging": dict(payables_aging),
+            "forecast_trend": forecast_trend,
         },
     }

@@ -24,6 +24,8 @@ class ExecSheetsWriter:
             ws.clear()
             if ws.col_count < cols:
                 ws.add_cols(cols - ws.col_count)
+            if ws.row_count < rows:
+                ws.add_rows(rows - ws.row_count)
             self._unmerge_all(ws)
         except gspread.WorksheetNotFound:
             ws = self.sheet.add_worksheet(title=title, rows=rows, cols=cols)
@@ -220,8 +222,8 @@ class ExecSheetsWriter:
         self.add_line_chart(ws, "Revenue Trend (invoiced, 30 days)", 2, len(revenue_trend_rows), domain_col=10, series_cols=[11], anchor_row=chart_row, anchor_col=1)
         self.add_pie_chart(ws, "Order Status Breakdown", 2, len(status_rows), label_col=13, value_col=14, anchor_row=chart_row, anchor_col=10)
 
-    def write_finance(self, open_items_rows, cash_trend_rows, aging_rows):
-        ws = self._get_or_create_tab("Finance", cols=20, rows=max(60, len(open_items_rows) + 10))
+    def write_finance(self, open_items_rows, cash_trend_rows, aging_rows, forecast_rows):
+        ws = self._get_or_create_tab("Finance", cols=20, rows=max(80, len(open_items_rows) + len(forecast_rows) + 30))
         self._delete_charts(ws)
 
         header = ["Type", "Reference", "Counterparty", "Due Date", "Amount", "Aging Bucket"]
@@ -233,6 +235,12 @@ class ExecSheetsWriter:
         aging_header = ["Aging Bucket", "Receivables", "Payables"]
         self._write_block(ws, 1, 13, [aging_header] + aging_rows)
 
-        chart_row = max(len(open_items_rows), len(cash_trend_rows), len(aging_rows)) + 4
+        forecast_header = ["Date", "Projected Balance"]
+        self._write_block(ws, 1, 17, [forecast_header] + forecast_rows)
+
+        chart_row = max(len(open_items_rows), len(cash_trend_rows), len(aging_rows), len(forecast_rows)) + 4
         self.add_line_chart(ws, "Cash Flow / Balance Trend (30 days)", 2, len(cash_trend_rows), domain_col=9, series_cols=[11], anchor_row=chart_row, anchor_col=1)
         self.add_column_chart(ws, "Receivables / Payables Aging", 2, len(aging_rows), domain_col=13, series_cols=[14, 15], anchor_row=chart_row, anchor_col=10)
+
+        chart_row_2 = chart_row + 20
+        self.add_line_chart(ws, "Cash Flow Forecast (draft)", 2, len(forecast_rows), domain_col=17, series_cols=[18], anchor_row=chart_row_2, anchor_col=1)

@@ -238,6 +238,12 @@
         <div class="chart-caption" id="balanceCaption"></div>
       </div>
 
+      <div class="chart-block">
+        <p class="block-title">Cash flow forecast &mdash; draft</p>
+        <svg id="forecastChart" viewBox="0 0 560 170"></svg>
+        <div class="chart-caption" id="forecastCaption"></div>
+      </div>
+
       <div>
         <p class="block-title">Receivables &amp; payables aging</p>
         <div class="aging-legend">
@@ -267,6 +273,8 @@
   <footer>
     <p><b>Overdue receivables &mdash; yesterday</b> is approximated from today's open-invoice snapshot (Odoo only exposes currently-open invoices, not a historical one), so it slightly undercounts anything paid since yesterday.</p>
     <p id="gpCaveat"></p>
+    <p><b>Cash flow forecast</b> is a draft: it only projects known open vendor bill and customer invoice due dates against the current balance &mdash; no new sales, recurring costs, or realistic payment-timing behavior are modeled yet. Anything already overdue is assumed to land today rather than on its original due date.</p>
+    <p><b>Quotes raised &mdash; yesterday</b> uses each order's current state, not its state as of yesterday &mdash; a quote raised yesterday but already confirmed into a sale order by today drops out of both figures rather than staying counted in yesterday's.</p>
     <p>Source: Odoo (sale orders, bank feed, open invoices/bills), read-only. Ask for a refresh any time to pull a new snapshot.</p>
   </footer>
 
@@ -372,6 +380,7 @@ const SYNC_ENDPOINT = 'https://ultima-pulse-sync.lloyd-casavecchia.workers.dev/'
     {label:'Revenue (Last Month)', value: fmtMoney(k.revenue_last_month), delta:'', sub:'full previous calendar month'},
     {label:'Revenue (Year-to-Date)', value: fmtMoney(k.revenue_ytd), delta:'', sub:'Jan 1 through today'},
     {label:'New Orders (MTD)', value: fmtNum(k.new_orders_today), delta: deltaChipInt(k.new_orders_today - k.new_orders_yesterday, false), sub:`${k.new_orders_yesterday} through yesterday`},
+    {label:'Quotes Raised (MTD)', value: fmtMoney(k.quotes_raised_mtd), delta: deltaChip(k.quotes_raised_mtd - k.quotes_raised_mtd_yesterday, false), sub:'value of draft/sent orders'},
     {label:'Delayed Orders', value: fmtNum(k.delayed_orders), delta: deltaChipInt(k.delayed_orders - k.delayed_orders_yesterday, true), sub:'past commitment date', neg: k.delayed_orders>0},
     {label:'Cash Flow (MTD, net)', value: fmtMoney(k.cash_flow_today), delta: deltaChip(k.cash_flow_today - k.cash_flow_yesterday, false), sub:`${fmtMoney(k.cash_flow_yesterday)} through yesterday`},
     {label:'Overdue Receivables', value: fmtMoney(k.overdue_receivables_today), delta: deltaChip(k.overdue_receivables_today - k.overdue_receivables_yesterday, true), sub:'yesterday figure approximate', neg: k.overdue_receivables_today>0},
@@ -433,11 +442,14 @@ function lineChart(svgEl, series, {color, w=560, h=170, pad=28}){
 
 lineChart(document.getElementById('revenueChart'), DATA.revenue_trend, {color:'var(--accent)'});
 lineChart(document.getElementById('balanceChart'), DATA.balance_trend, {color:'var(--accent)'});
+lineChart(document.getElementById('forecastChart'), DATA.forecast_trend, {color:'var(--accent)'});
 
 document.getElementById('revenueCaption').innerHTML =
   `<span>${fmtDateShort(DATA.revenue_trend[0][0])}</span><b>${fmtMoney(DATA.revenue_trend.reduce((s,d)=>s+d[1],0))} total</b><span>${fmtDateShort(DATA.revenue_trend[DATA.revenue_trend.length-1][0])}</span>`;
 document.getElementById('balanceCaption').innerHTML =
   `<span>${fmtDateShort(DATA.balance_trend[0][0])}</span><b>${fmtMoney(DATA.balance_trend[DATA.balance_trend.length-1][1])} now</b><span>${fmtDateShort(DATA.balance_trend[DATA.balance_trend.length-1][0])}</span>`;
+document.getElementById('forecastCaption').innerHTML =
+  `<span>${fmtDateShort(DATA.forecast_trend[0][0])}</span><b>${fmtMoney(DATA.forecast_trend[DATA.forecast_trend.length-1][1])} projected</b><span>${fmtDateShort(DATA.forecast_trend[DATA.forecast_trend.length-1][0])}</span>`;
 
 // ---------- Order status ----------
 (function renderStatus(){

@@ -66,6 +66,8 @@ def _key_figures_rows(data):
         ["Revenue (Year-to-Date)", s["revenue_ytd"], "", "", "Jan 1 through today, invoiced, net of VAT", "money"],
         ["New Orders (MTD)", s["new_orders_today"], s["new_orders_yesterday"],
          s["new_orders_today"] - s["new_orders_yesterday"], "Sale orders created this month so far", "int"],
+        ["Quotes Raised (MTD, value)", s["quotes_raised_mtd"], s["quotes_raised_mtd_yesterday"],
+         s["quotes_raised_mtd"] - s["quotes_raised_mtd_yesterday"], "Draft/sent sale orders, by value, not yet confirmed (see caveats)", "money"],
         ["Delayed Orders", len(s["delayed_orders"]), s["delayed_orders_count_yesterday"],
          len(s["delayed_orders"]) - s["delayed_orders_count_yesterday"], "Past commitment date, not yet fulfilled", "int"],
         ["Cash Flow (MTD, net)", f["cash_flow_today"], f["cash_flow_yesterday"],
@@ -129,6 +131,10 @@ def _cash_trend_rows(data):
     return [[d.isoformat(), net_by_date.get(d, 0.0), balance] for d, balance in data["finance"]["balance_trend"]]
 
 
+def _forecast_rows(data):
+    return [[d.isoformat(), balance] for d, balance in data["finance"]["forecast_trend"]]
+
+
 def _aging_rows(data):
     f = data["finance"]
     return [
@@ -151,4 +157,4 @@ def run():
 
     sheets.write_summary(_narrative(data), _key_figures_rows(data), data["caveats"])
     sheets.write_sales(_orders_rows(data), _revenue_trend_rows(data), _status_rows(data), _top_customer_rows(data))
-    sheets.write_finance(_open_items_rows(data), _cash_trend_rows(data), _aging_rows(data))
+    sheets.write_finance(_open_items_rows(data), _cash_trend_rows(data), _aging_rows(data), _forecast_rows(data))
