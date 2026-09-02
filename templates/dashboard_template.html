@@ -335,9 +335,9 @@ const SYNC_ENDPOINT = 'https://ultima-pulse-sync.lloyd-casavecchia.workers.dev/'
   const el = document.getElementById('gpCaveat');
   const gp = DATA.kpis.gp_percent;
   if (gp === null || gp === undefined) {
-    el.innerHTML = '<b>Gross Profit %</b> is not shown — no invoiced line items this month have product cost data recorded in Odoo.';
+    el.innerHTML = '<b>Gross Profit % (YTD)</b> is not shown — no invoiced line items this year have product cost data recorded in Odoo.';
   } else if (DATA.kpis.gp_coverage_percent < 99.95) {
-    el.innerHTML = `<b>Gross Profit %</b> is computed only over the ${DATA.kpis.gp_coverage_percent.toFixed(0)}% of this month's invoiced revenue that has real product cost data in Odoo — the rest has no cost recorded (shows as 0 cost / 100% margin, which is a data gap, not a genuinely free sale) and is excluded rather than included at a misleadingly inflated margin.`;
+    el.innerHTML = `<b>Gross Profit % (YTD)</b> is computed only over the ${DATA.kpis.gp_coverage_percent.toFixed(0)}% of this year's invoiced revenue that has real product cost data in Odoo — the rest has no cost recorded (shows as 0 cost / 100% margin, which is a data gap, not a genuinely free sale) and is excluded rather than included at a misleadingly inflated margin.`;
   } else {
     el.remove();
   }
@@ -386,7 +386,7 @@ const SYNC_ENDPOINT = 'https://ultima-pulse-sync.lloyd-casavecchia.workers.dev/'
     {label:'Overdue Receivables', value: fmtMoney(k.overdue_receivables_today), delta: deltaChip(k.overdue_receivables_today - k.overdue_receivables_yesterday, true), sub:'yesterday figure approximate', neg: k.overdue_receivables_today>0},
   ];
   if (k.gp_percent !== null && k.gp_percent !== undefined) {
-    cards.push({label:'Gross Profit %', value: k.gp_percent.toFixed(1) + '%', delta:'', sub:`on ${k.gp_coverage_percent.toFixed(0)}% of MTD revenue with cost data`});
+    cards.push({label:'Gross Profit % (YTD)', value: k.gp_percent.toFixed(1) + '%', delta:'', sub:`on ${k.gp_coverage_percent.toFixed(0)}% of YTD revenue with cost data`});
   }
   document.getElementById('kpiRow').innerHTML = cards.map(c => `
     <div class="kpi">

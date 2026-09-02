@@ -164,11 +164,12 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     revenue_ytd = sum(amount for d, amount in invoiced if year_start <= d <= today)
     revenue_trend = _daily_series(invoiced, trend_start, today)
 
-    # Gross profit — only over invoice lines with real cost data (see
-    # OdooClient.invoiced_lines_with_cost). A blended figure across
-    # everything would be skewed by products with no cost ever recorded in
-    # Odoo (which look like 0 cost / 100% margin, not genuinely free).
-    margin_lines = odoo.invoiced_lines_with_cost(from_date=month_start.isoformat())
+    # Gross profit — year-to-date, only over invoice lines with real cost
+    # data (see OdooClient.invoiced_lines_with_cost). A blended figure
+    # across everything would be skewed by products with no cost ever
+    # recorded in Odoo (which look like 0 cost / 100% margin, not
+    # genuinely free).
+    margin_lines = odoo.invoiced_lines_with_cost(from_date=year_start.isoformat())
     gp_revenue_total = sum(l["revenue"] for l in margin_lines)
     costed_lines = [l for l in margin_lines if l["unit_cost"]]
     gp_revenue_costed = sum(l["revenue"] for l in costed_lines)
@@ -267,7 +268,7 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     )
     if gp_revenue_total and gp_coverage_percent < 99.95:
         caveats.append(
-            f"Gross Profit % is computed only over the {gp_coverage_percent:.0f}% of this month's invoiced "
+            f"Gross Profit % is computed only over the {gp_coverage_percent:.0f}% of this year's invoiced "
             f"revenue that has real product cost data in Odoo — the remaining "
             f"€{gp_revenue_total - gp_revenue_costed:,.2f} has no cost recorded (shows as 0 cost / 100% "
             f"margin, which is a data gap, not a genuinely free sale) and is excluded rather than included "

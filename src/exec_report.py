@@ -30,7 +30,7 @@ def _narrative(data):
 
     gp_part = ""
     if s["gp_percent"] is not None:
-        gp_part = f", {s['gp_percent']:.1f}% GP (on {s['gp_coverage_percent']:.0f}% of MTD revenue with cost data)"
+        gp_part = f", {s['gp_percent']:.1f}% GP YTD (on {s['gp_coverage_percent']:.0f}% of YTD revenue with cost data)"
     parts.append(
         f"Month-to-date: {s['new_orders_today']} new order(s), €{_fmt_money(s['revenue_today'])} invoiced revenue"
         f"{gp_part} (vs €{_fmt_money(s['revenue_yesterday'])} through yesterday)."
@@ -77,11 +77,11 @@ def _key_figures_rows(data):
     ]
     if s["gp_percent"] is not None:
         rows.append([
-            "Gross Profit %", round(s["gp_percent"], 1), "", "",
-            f"Only {s['gp_coverage_percent']:.0f}% of MTD revenue has cost data in Odoo (see caveats)", "percent",
+            "Gross Profit % (YTD)", round(s["gp_percent"], 1), "", "",
+            f"Only {s['gp_coverage_percent']:.0f}% of YTD revenue has cost data in Odoo (see caveats)", "percent",
         ])
     else:
-        rows.append(["Gross Profit %", "N/A", "", "", "No invoice lines this month have cost data in Odoo", "percent"])
+        rows.append(["Gross Profit % (YTD)", "N/A", "", "", "No invoice lines this year have cost data in Odoo", "percent"])
     return rows
 
 
