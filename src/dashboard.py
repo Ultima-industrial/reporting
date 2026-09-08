@@ -62,6 +62,11 @@ def _build_payload(data):
              "due_date": b["due_date"].isoformat() if b["due_date"] else None, "amount": float(b["amount_residual"])}
             for b in f["open_bills"]
         ], key=lambda r: -r["amount"])[:8],
+        "import_vat_events": [
+            {"po_name": e["po_name"], "supplier": e["supplier"],
+             "due_date": e["due_date"].isoformat(), "amount": e["amount"], "rule": e["rule"]}
+            for e in f["import_vat_events"]
+        ],
     }
 
 

@@ -144,6 +144,17 @@ class OdooClient:
             })
         return result
 
+    def open_purchase_orders(self):
+        """Confirmed purchase orders not yet arrived (state='purchase',
+        effective_date not set) — the ones a forward cash flow forecast
+        cares about. date_planned is Odoo's "Expected Arrival" field
+        (labeled "Arrivo Previsto" in the Italian UI)."""
+        return self._search_read(
+            "purchase.order",
+            [["state", "=", "purchase"], ["effective_date", "=", False]],
+            ["name", "partner_id", "amount_total", "date_planned"],
+        )
+
     def sales_orders(self, from_date=None):
         """Sale orders (quotations + confirmed), excluding cancelled, with the
         fields needed for revenue, fulfillment status, and delay detection.

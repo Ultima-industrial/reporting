@@ -222,8 +222,8 @@ class ExecSheetsWriter:
         self.add_line_chart(ws, "Revenue Trend (invoiced, 30 days)", 2, len(revenue_trend_rows), domain_col=10, series_cols=[11], anchor_row=chart_row, anchor_col=1)
         self.add_pie_chart(ws, "Order Status Breakdown", 2, len(status_rows), label_col=13, value_col=14, anchor_row=chart_row, anchor_col=10)
 
-    def write_finance(self, open_items_rows, cash_trend_rows, aging_rows, forecast_rows):
-        ws = self._get_or_create_tab("Finance", cols=20, rows=max(80, len(open_items_rows) + len(forecast_rows) + 30))
+    def write_finance(self, open_items_rows, cash_trend_rows, aging_rows, forecast_rows, import_vat_rows):
+        ws = self._get_or_create_tab("Finance", cols=24, rows=max(80, len(open_items_rows) + len(forecast_rows) + 30))
         self._delete_charts(ws)
 
         header = ["Type", "Reference", "Counterparty", "Due Date", "Amount", "Aging Bucket"]
@@ -237,6 +237,9 @@ class ExecSheetsWriter:
 
         forecast_header = ["Date", "Projected Balance"]
         self._write_block(ws, 1, 17, [forecast_header] + forecast_rows)
+
+        import_vat_header = ["PO", "Supplier", "Due Date", "Amount", "Rule"]
+        self._write_block(ws, 1, 20, [import_vat_header] + import_vat_rows)
 
         chart_row = max(len(open_items_rows), len(cash_trend_rows), len(aging_rows), len(forecast_rows)) + 4
         self.add_line_chart(ws, "Cash Flow / Balance Trend (30 days)", 2, len(cash_trend_rows), domain_col=9, series_cols=[11], anchor_row=chart_row, anchor_col=1)

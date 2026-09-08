@@ -266,6 +266,13 @@
           <table class="data" id="billsTable"></table>
         </div>
       </div>
+
+      <div id="importVatBlock">
+        <p class="block-title">Import VAT prepayments &mdash; forecast</p>
+        <div class="table-wrap">
+          <table class="data" id="importVatTable"></table>
+        </div>
+      </div>
     </section>
 
   </div>
@@ -273,7 +280,7 @@
   <footer>
     <p><b>Overdue receivables &mdash; yesterday</b> is approximated from today's open-invoice snapshot (Odoo only exposes currently-open invoices, not a historical one), so it slightly undercounts anything paid since yesterday.</p>
     <p id="gpCaveat"></p>
-    <p><b>Cash flow forecast</b> is a draft: it only projects known open vendor bill and customer invoice due dates against the current balance &mdash; no new sales, recurring costs, or realistic payment-timing behavior are modeled yet. Anything already overdue is assumed to land today rather than on its original due date.</p>
+    <p><b>Cash flow forecast</b> is a draft: it only projects known open vendor bill and customer invoice due dates, plus configured import VAT prepayment rules, against the current balance &mdash; no new sales, recurring costs, or realistic payment-timing behavior are modeled yet. Anything already overdue/due is assumed to land today rather than on its original due date.</p>
     <p><b>Quotes raised &mdash; yesterday</b> uses each order's current state, not its state as of yesterday &mdash; a quote raised yesterday but already confirmed into a sale order by today drops out of both figures rather than staying counted in yesterday's.</p>
     <p>Source: Odoo (sale orders, bank feed, open invoices/bills), read-only. Ask for a refresh any time to pull a new snapshot.</p>
   </footer>
@@ -527,4 +534,25 @@ function isLate(due){ if(!due) return false; return due < DATA.today; }
 
 renderTable('overdueTable', DATA.top_overdue_receivables, {emptyMsg:'No overdue receivables.'});
 renderTable('billsTable', DATA.open_bills_list, {emptyMsg:'No open vendor bills.'});
+
+// ---------- Import VAT prepayments (configured per-supplier rules) ----------
+(function renderImportVat(){
+  const block = document.getElementById('importVatBlock');
+  const events = DATA.import_vat_events || [];
+  if (!events.length) { block.remove(); return; }
+  document.getElementById('importVatTable').innerHTML = `
+    <thead><tr><th>PO</th><th>Supplier</th><th>Due</th><th style="text-align:right">Amount</th><th>Rule</th></tr></thead>
+    <tbody>
+      ${events.map(e => `
+        <tr>
+          <td class="name">${e.po_name}</td>
+          <td>${e.supplier}</td>
+          <td>${fmtDateShort(e.due_date)}${isLate(e.due_date) ? ' <span class="pill late">late</span>' : ''}</td>
+          <td class="num">${fmtMoney(-e.amount)}</td>
+          <td style="color:var(--text-faint); font-size:.74rem;">${e.rule}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  `;
+})();
 </script>

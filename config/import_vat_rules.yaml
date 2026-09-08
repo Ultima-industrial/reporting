@@ -1,0 +1,18 @@
+# Import VAT ("IVA in entrata") prepayment rules for specific suppliers'
+# purchase orders — a percentage of the PO value must be paid to customs
+# some days before the order's expected arrival (Odoo's "date_planned"
+# field, labeled "Arrivo Previsto" in the Italian UI), separate from and
+# in addition to any payment owed to the supplier itself on their own bill.
+#
+# Added 2026-09-08 per Nina Dev: Alphabond is a UK supplier, so their PO
+# value has no Italian VAT on it — Ultima self-accounts for the import VAT
+# straight to customs instead of it showing up as a normal vendor bill.
+#
+# supplier: matched case-insensitively as a substring against the purchase
+# order's vendor name (e.g. "Alphabond" matches "ALPHABOND TECHNOLOGIES LIMITED").
+# vat_percent: percentage of the PO's amount_total.
+# days_before_arrival: how many days before date_planned the payment is due.
+
+- supplier: "Alphabond"
+  vat_percent: 22
+  days_before_arrival: 3

@@ -13,6 +13,10 @@ silently presented as exact.
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 
+import yaml
+
+from .config import CONFIG_DIR
+
 TREND_DAYS = 30
 FORECAST_MAX_DAYS = 180
 AGING_BUCKETS = ["Not yet due", "1-30 days overdue", "31-60 days overdue", "61-90 days overdue", "90+ days overdue"]
@@ -64,9 +68,44 @@ def _daily_series(dated_amounts, start, end):
     return series
 
 
-def _forecast_series(latest_balance, today, bills, invoices, max_days=FORECAST_MAX_DAYS):
+def _import_vat_events(purchase_orders):
+    """Reads config/import_vat_rules.yaml and computes one forecast outflow
+    per matching purchase order: some suppliers (e.g. Alphabond, a UK
+    vendor) don't charge Italian VAT on their own PO/bill — Ultima
+    self-accounts the import VAT straight to customs instead, due some
+    days before the order's expected arrival (date_planned). This is a
+    real cash outflow with no corresponding vendor bill in Odoo, so it
+    can't come from open_vendor_bills() and has to be modeled separately."""
+    path = CONFIG_DIR / "import_vat_rules.yaml"
+    if not path.exists():
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        rules = yaml.safe_load(f) or []
+    if not rules:
+        return []
+
+    events = []
+    for po in purchase_orders:
+        planned = _date_part(po.get("date_planned"))
+        if not planned:
+            continue
+        partner_name = po["partner_id"][1] if po.get("partner_id") else ""
+        for rule in rules:
+            if rule["supplier"].lower() in partner_name.lower():
+                events.append({
+                    "po_name": po["name"],
+                    "supplier": partner_name,
+                    "due_date": planned - timedelta(days=rule["days_before_arrival"]),
+                    "amount": float(po["amount_total"]) * rule["vat_percent"] / 100,
+                    "rule": f"{rule['vat_percent']}% import VAT, {rule['days_before_arrival']}d before arrival",
+                })
+    return events
+
+
+def _forecast_series(latest_balance, today, bills, invoices, import_vat_events, max_days=FORECAST_MAX_DAYS):
     """Draft forward cash flow projection: current balance, walked forward
-    day by day as open bills (out) and invoices (in) hit their due dates.
+    day by day as open bills (out), invoices (in), and configured import
+    VAT prepayments (out — see _import_vat_events) hit their due dates.
     Nothing else is modeled yet — no new sales, no recurring costs, no
     payment-timing behavior (customers who pay late, suppliers paid early).
     Anything already overdue is assumed to land "today" rather than on its
@@ -84,6 +123,10 @@ def _forecast_series(latest_balance, today, bills, invoices, max_days=FORECAST_M
             d = max(i["due_date"], today)
             events[d] += float(i["amount_residual"])
             max_date = max(max_date, d)
+    for v in import_vat_events:
+        d = max(v["due_date"], today)
+        events[d] -= v["amount"]
+        max_date = max(max_date, d)
     max_date = min(max_date, today + timedelta(days=max_days))
 
     series = []
@@ -277,12 +320,15 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
 
     overdue_payables_today = [b for b in bills if b["due_date"] and b["due_date"] < today]
 
-    forecast_trend = _forecast_series(latest_balance, today, bills, invoices)
+    purchase_orders_raw = odoo.open_purchase_orders()
+    import_vat_events = _import_vat_events(purchase_orders_raw)
+
+    forecast_trend = _forecast_series(latest_balance, today, bills, invoices, import_vat_events)
     caveats.append(
         "Cash Flow Forecast is a draft: it only projects known open vendor bill and customer invoice due "
-        "dates against the current balance — no new sales, recurring costs, or realistic payment-timing "
-        "behavior are modeled yet. Anything already overdue is assumed to land today rather than on its "
-        "original due date."
+        "dates, plus configured import VAT prepayment rules (config/import_vat_rules.yaml), against the "
+        "current balance — no new sales, recurring costs, or realistic payment-timing behavior are modeled "
+        "yet. Anything already overdue/due is assumed to land today rather than on its original due date."
     )
     caveats.append(
         "Quotes Raised 'yesterday' uses each order's CURRENT state, not its state as of yesterday — a "
@@ -339,5 +385,6 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "receivables_aging": dict(receivables_aging),
             "payables_aging": dict(payables_aging),
             "forecast_trend": forecast_trend,
+            "import_vat_events": sorted(import_vat_events, key=lambda e: e["due_date"]),
         },
     }

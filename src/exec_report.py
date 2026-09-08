@@ -135,6 +135,13 @@ def _forecast_rows(data):
     return [[d.isoformat(), balance] for d, balance in data["finance"]["forecast_trend"]]
 
 
+def _import_vat_rows(data):
+    return [
+        [e["po_name"], e["supplier"], e["due_date"].isoformat(), -e["amount"], e["rule"]]
+        for e in data["finance"]["import_vat_events"]
+    ]
+
+
 def _aging_rows(data):
     f = data["finance"]
     return [
@@ -157,4 +164,4 @@ def run():
 
     sheets.write_summary(_narrative(data), _key_figures_rows(data), data["caveats"])
     sheets.write_sales(_orders_rows(data), _revenue_trend_rows(data), _status_rows(data), _top_customer_rows(data))
-    sheets.write_finance(_open_items_rows(data), _cash_trend_rows(data), _aging_rows(data), _forecast_rows(data))
+    sheets.write_finance(_open_items_rows(data), _cash_trend_rows(data), _aging_rows(data), _forecast_rows(data), _import_vat_rows(data))
