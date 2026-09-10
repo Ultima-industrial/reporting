@@ -1,18 +1,28 @@
-# Import VAT ("IVA in entrata") prepayment rules for specific suppliers'
-# purchase orders — a percentage of the PO value must be paid to customs
-# some days before the order's expected arrival (Odoo's "date_planned"
-# field, labeled "Arrivo Previsto" in the Italian UI), separate from and
-# in addition to any payment owed to the supplier itself on their own bill.
+# Import VAT ("IVA in entrata") self-accounting rules — Ultima pays this
+# VAT directly to customs (not the supplier) for confirmed, not-yet-arrived
+# purchase orders from suppliers based in a listed country, some days
+# before the order's expected arrival (Odoo's "date_planned" field,
+# labeled "Arrivo Previsto" in the Italian UI), separate from and in
+# addition to any payment owed to the supplier itself on their own bill.
+# It's recovered as input VAT at Ultima's next quarterly IVA settlement
+# after the payment date (Ultima files quarterly, "trimestrale per
+# opzione") — see exec_data._vat_settlement_date.
 #
-# Added 2026-09-08 per Nina Dev: Alphabond is a UK supplier, so their PO
-# value has no Italian VAT on it — Ultima self-accounts for the import VAT
-# straight to customs instead of it showing up as a normal vendor bill.
+# Rewritten 2026-09-10 per Annalisa Casavecchia: generalized from a
+# per-supplier name list (previously just "Alphabond") to a country-based
+# rule covering all UK-based suppliers, with an explicit exclude list for
+# suppliers based there on paper but out of scope in practice — e.g.
+# Bioscan is UK-registered but ships from France, so ordinary EU
+# intra-community VAT rules apply instead of import VAT at customs.
 #
-# supplier: matched case-insensitively as a substring against the purchase
-# order's vendor name (e.g. "Alphabond" matches "ALPHABOND TECHNOLOGIES LIMITED").
+# countries: ISO country codes matched against the purchase order vendor's
+# country (e.g. "GB" = United Kingdom).
+# exclude: supplier names (case-insensitive substring) exempted even
+# though they're based in a listed country.
 # vat_percent: percentage of the PO's amount_total.
 # days_before_arrival: how many days before date_planned the payment is due.
 
-- supplier: "Alphabond"
+- countries: ["GB"]
+  exclude: ["Bioscan"]
   vat_percent: 22
-  days_before_arrival: 3
+  days_before_arrival: 5
