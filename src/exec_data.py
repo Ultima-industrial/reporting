@@ -75,14 +75,82 @@ def _daily_series(dated_amounts, start, end):
     return series
 
 
-def _import_vat_events(purchase_orders):
+def _add_month(d):
+    if d.month == 12:
+        return d.replace(year=d.year + 1, month=1)
+    return d.replace(month=d.month + 1)
+
+
+def _expected_invoiced_by_month(odoo, today, months=6):
+    """Expected invoiced revenue by month, forward-looking: Ultima invoices
+    immediately on delivery ("fatture immediate"), so a confirmed sale
+    order's expected invoice date is its promised delivery date
+    (commitment_date, "Data Consegna") rather than its order date. Only
+    confirmed orders count (drafts/quotations aren't real deliveries yet).
+    Uses each order line's untaxed_amount_to_invoice — Odoo's own computed
+    "remaining to invoice" value (net of VAT) — rather than the order's
+    full amount_untaxed, so anything already invoiced, in full or in part,
+    is excluded rather than double-counted against actual Revenue. Grouped
+    into `months` full calendar-month buckets starting with the current
+    month."""
+    month_starts = []
+    m = today.replace(day=1)
+    for _ in range(months):
+        month_starts.append(m)
+        m = _add_month(m)
+    range_start = month_starts[0]
+    range_end = _add_month(month_starts[-1]) - timedelta(days=1)
+
+    lines = odoo.confirmed_order_lines_to_invoice_by_delivery_date(range_start.isoformat(), range_end.isoformat())
+    order_ids = {l["order_id"][0] for l in lines if l.get("order_id")}
+    commitment_by_order = {
+        oid: _date_part(v) for oid, v in odoo.order_commitment_dates(order_ids).items()
+    }
+
+    totals = defaultdict(float)
+    for l in lines:
+        order_id = l["order_id"][0] if l.get("order_id") else None
+        d = commitment_by_order.get(order_id)
+        if not d:
+            continue
+        totals[d.replace(day=1)] += float(l["untaxed_amount_to_invoice"])
+    return [(ms, totals.get(ms, 0.0)) for ms in month_starts]
+
+
+def _vat_settlement_date(paid_date):
+    """Ultima files IVA quarterly ("trimestrale per opzione", with the 1%
+    interest surcharge) rather than monthly, so VAT paid at customs isn't
+    recovered "next month" — it's recovered at the next quarterly
+    settlement after the payment date:
+      Q1 (Jan-Mar) -> 16 May
+      Q2 (Apr-Jun) -> 20 Aug (the mid-August deadline shifts to the 20th
+                              under the standard summer deferral)
+      Q3 (Jul-Sep) -> 16 Nov
+      Q4 (Oct-Dec) -> no standalone quarterly payment; settled via the
+                      annual return the following 16 March instead."""
+    y = paid_date.year
+    if paid_date <= date(y, 3, 31):
+        return date(y, 5, 16)
+    if paid_date <= date(y, 6, 30):
+        return date(y, 8, 20)
+    if paid_date <= date(y, 9, 30):
+        return date(y, 11, 16)
+    return date(y + 1, 3, 16)
+
+
+def _import_vat_events(purchase_orders, country_by_partner):
     """Reads config/import_vat_rules.yaml and computes one forecast outflow
-    per matching purchase order: some suppliers (e.g. Alphabond, a UK
-    vendor) don't charge Italian VAT on their own PO/bill — Ultima
+    (plus a paired recovery inflow — see _vat_settlement_date) per matching
+    purchase order: suppliers based in a listed country (e.g. the UK, post-
+    Brexit) don't charge Italian VAT on their own PO/bill — Ultima
     self-accounts the import VAT straight to customs instead, due some
-    days before the order's expected arrival (date_planned). This is a
-    real cash outflow with no corresponding vendor bill in Odoo, so it
-    can't come from open_vendor_bills() and has to be modeled separately."""
+    days before the order's expected arrival (date_planned), and recovers
+    it as input VAT at the next quarterly settlement. This is a real cash
+    outflow (and later inflow) with no corresponding vendor bill in Odoo,
+    so it can't come from open_vendor_bills() and has to be modeled
+    separately. Matching is by the vendor's country, with an explicit
+    per-rule exclude list for suppliers based there on paper but outside
+    the rule in practice (e.g. shipping from elsewhere in the EU)."""
     path = CONFIG_DIR / "import_vat_rules.yaml"
     if not path.exists():
         return []
@@ -96,46 +164,200 @@ def _import_vat_events(purchase_orders):
         planned = _date_part(po.get("date_planned"))
         if not planned:
             continue
+        partner_id = po["partner_id"][0] if po.get("partner_id") else None
         partner_name = po["partner_id"][1] if po.get("partner_id") else ""
+        country = country_by_partner.get(partner_id)
         for rule in rules:
-            if rule["supplier"].lower() in partner_name.lower():
-                events.append({
-                    "po_name": po["name"],
-                    "supplier": partner_name,
-                    "due_date": planned - timedelta(days=rule["days_before_arrival"]),
-                    "amount": float(po["amount_total"]) * rule["vat_percent"] / 100,
-                    "rule": f"{rule['vat_percent']}% import VAT, {rule['days_before_arrival']}d before arrival",
-                })
+            if country not in rule.get("countries", []):
+                continue
+            if any(ex.lower() in partner_name.lower() for ex in rule.get("exclude", [])):
+                continue
+            due = planned - timedelta(days=rule["days_before_arrival"])
+            events.append({
+                "po_name": po["name"],
+                "supplier": partner_name,
+                "due_date": due,
+                "amount": float(po["amount_total"]) * rule["vat_percent"] / 100,
+                "recovered_date": _vat_settlement_date(due),
+                "rule": f"{rule['vat_percent']}% import VAT, {rule['days_before_arrival']}d before arrival",
+            })
+            break  # first matching rule wins
     return events
 
 
-def _forecast_series(latest_balance, today, bills, invoices, import_vat_events, max_days=FORECAST_MAX_DAYS):
+_SUPPORTED_DELAY_TYPES = {"days_after", "days_after_end_of_month"}
+
+
+def _term_due_dates(anchor_date, term_lines):
+    """Given one payment term's lines and an anchor date, returns a list of
+    (due_date, fraction) tuples — fraction is a 0-1 share of the PO's total.
+    Returns None (not a supported schedule) if any line uses a delay_type
+    or value type this hasn't been built to handle yet (e.g. a fixed-amount
+    line, or a "N days after end of month, on the Xth" schedule) — callers
+    should flag that as a data issue rather than silently mis-price it."""
+    results = []
+    for line in term_lines:
+        if line.get("value") != "percent" or line.get("delay_type") not in _SUPPORTED_DELAY_TYPES:
+            return None
+        d = anchor_date + timedelta(days=int(line["nb_days"]))
+        if line["delay_type"] == "days_after_end_of_month":
+            next_month = d.replace(day=28) + timedelta(days=4)
+            d = next_month - timedelta(days=next_month.day)
+        results.append((d, float(line["value_amount"]) / 100))
+    if results and abs(sum(f for _, f in results) - 1.0) > 0.01:
+        return None  # lines don't add up to 100% — schema mismatch, don't guess
+    return results or None
+
+
+def _po_payment_events(purchase_orders, term_lines_by_term_id):
+    """Estimated future payments to suppliers for confirmed purchase orders
+    that have no vendor bill yet (invoice_ids empty) — a bill, open or
+    paid, already accounts for that PO's cash impact elsewhere (via
+    open_vendor_bills, or it's settled), so estimating on top of an
+    existing bill would double-count. Anchor date is date_planned (expected
+    arrival) — an approximation, since a supplier's actual invoice date may
+    fall earlier or later; worth sanity-checking computed dates against a
+    few real POs after this ships.
+
+    Every confirmed PO is expected to carry a payment term ("termini di
+    pagamento") — this is meant to become standard data-entry practice, so
+    a PO missing one (or missing date_planned, or using a payment-term
+    schedule this function doesn't support) is excluded and flagged via
+    the returned issues list rather than silently guessed at or skipped
+    quietly."""
+    events = []
+    issues = []
+    for po in purchase_orders:
+        if po.get("invoice_ids"):
+            continue
+        supplier = po["partner_id"][1] if po.get("partner_id") else "(unknown)"
+        term = po.get("payment_term_id")
+        if not term:
+            issues.append(f"{po['name']} ({supplier}) has no payment term set")
+            continue
+        planned = _date_part(po.get("date_planned"))
+        if not planned:
+            issues.append(f"{po['name']} ({supplier}) has a payment term but no expected arrival date set")
+            continue
+        lines = term_lines_by_term_id.get(term[0])
+        splits = _term_due_dates(planned, lines) if lines else None
+        if not splits:
+            issues.append(f"{po['name']}'s payment term ('{term[1]}') uses a schedule not yet supported here")
+            continue
+        for due, fraction in splits:
+            events.append({
+                "po_name": po["name"],
+                "supplier": supplier,
+                "due_date": due,
+                "amount": float(po["amount_total"]) * fraction,
+            })
+    return events, issues
+
+
+def _vat_acconto_reference_liability(odoo, ref_year):
+    """Approximates the reference figure the "metodo storico" acconto
+    calculation needs — the VAT liability of Oct-Dec of ref_year (what a
+    quarterly filer's annual return would show on rigo VH4 for that
+    quarter): output VAT (posted customer invoices) minus input VAT
+    (posted vendor bills), Oct 1 - Dec 31.
+
+    Two things this approximation does NOT capture, both of which mean it
+    likely UNDERSTATES the true reference liability for a company with
+    material self-accounted import VAT like Ultima:
+      1. Self-accounted import VAT actually paid to customs in that
+         historical window — Odoo has no clean queryable record of past
+         customs payments the way it does posted invoices/bills, so this
+         input VAT credit isn't included here.
+      2. Any other Dichiarazione IVA adjustment (credit notes, splafonamento,
+         prior-period corrections, etc.) that a full VAT return computes
+         but a plain transaction sum doesn't.
+    Treat this as a starting estimate, not a substitute for the actual
+    filed rigo VH4 — see config/vat_acconto.yaml for a manual override."""
+    q4_start = date(ref_year, 10, 1)
+    q4_end = date(ref_year, 12, 31)
+
+    invoices = odoo.posted_customer_invoices(from_date=q4_start.isoformat())
+    output_vat = sum(
+        float(i["amount_tax"]) for i in invoices
+        if i.get("invoice_date") and q4_start <= _date_part(i["invoice_date"]) <= q4_end
+    )
+    bills = odoo.posted_vendor_bills(from_date=q4_start.isoformat())
+    input_vat = sum(
+        float(b["amount_tax"]) for b in bills
+        if b.get("invoice_date") and q4_start <= _date_part(b["invoice_date"]) <= q4_end
+    )
+    return output_vat - input_vat
+
+
+def _vat_acconto_events(odoo, today, max_days=FORECAST_MAX_DAYS):
+    """The December VAT advance payment (acconto IVA, due ~27 Dec) within
+    the forecast horizon. Uses config/vat_acconto.yaml's figure for a year
+    if one is set there (a definitive, manually-entered amount — e.g. the
+    actual filed rigo VH4 — always wins); otherwise estimates it via the
+    "metodo storico" safe-harbor calculation: 88% of the prior year's Q4
+    VAT liability (see _vat_acconto_reference_liability). If that
+    reference period was a net VAT credit (liability <= 0), no acconto is
+    due and no event is added."""
+    overrides = {}
+    path = CONFIG_DIR / "vat_acconto.yaml"
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            entries = yaml.safe_load(f) or []
+        overrides = {e["year"]: float(e["amount"]) for e in entries if e.get("amount") is not None}
+
+    events = []
+    horizon_end = today + timedelta(days=max_days)
+    y = today.year
+    while date(y, 12, 27) <= horizon_end:
+        due = date(y, 12, 27)
+        if due >= today:
+            if y in overrides:
+                amount = overrides[y]
+                estimated = False
+            else:
+                reference = _vat_acconto_reference_liability(odoo, y - 1)
+                amount = max(reference, 0.0) * 0.88
+                estimated = True
+            if amount:
+                events.append({"date": due, "amount": amount, "estimated": estimated})
+        y += 1
+    return events
+
+
+def _forecast_series(latest_balance, today, bills, invoices, import_vat_events,
+                      po_payment_events, vat_acconto_events, max_days=FORECAST_MAX_DAYS):
     """Draft forward cash flow projection: current balance, walked forward
-    day by day as open bills (out), invoices (in), and configured import
-    VAT prepayments (out — see _import_vat_events) hit their due dates.
-    Nothing else is modeled yet — no new sales, no recurring costs, no
-    payment-timing behavior (customers who pay late, suppliers paid early).
-    Anything already overdue is assumed to land "today" rather than on its
-    original (past) due date, since projecting a date before today doesn't
-    make sense for a forward chart — still expected, just timing unknown."""
+    day by day as open bills (out), invoices (in), configured import VAT
+    prepayments and their quarterly recovery (see _import_vat_events),
+    estimated payments on unbilled confirmed purchase orders (see
+    _po_payment_events), and the December VAT acconto (see
+    _vat_acconto_events) hit their dates. Still nothing beyond that is
+    modeled — no new sales, no recurring costs, no realistic payment-timing
+    behavior (customers who pay late, suppliers paid early). Anything
+    already overdue is assumed to land "today" rather than on its original
+    (past) due date, since projecting a date before today doesn't make
+    sense for a forward chart — still expected, just timing unknown.
+
+    The horizon always runs the full max_days (6 months) ahead of today,
+    not just out to the last known event — the balance simply stays flat
+    once every known event has landed, so the chart always shows a fixed
+    forward window rather than stopping wherever data happens to run out."""
     events = defaultdict(float)
-    max_date = today
     for b in bills:
         if b["due_date"]:
-            d = max(b["due_date"], today)
-            events[d] -= float(b["amount_residual"])
-            max_date = max(max_date, d)
+            events[max(b["due_date"], today)] -= float(b["amount_residual"])
     for i in invoices:
         if i["due_date"]:
-            d = max(i["due_date"], today)
-            events[d] += float(i["amount_residual"])
-            max_date = max(max_date, d)
+            events[max(i["due_date"], today)] += float(i["amount_residual"])
     for v in import_vat_events:
-        d = max(v["due_date"], today)
-        events[d] -= v["amount"]
-        max_date = max(max_date, d)
-    max_date = min(max_date, today + timedelta(days=max_days))
+        events[max(v["due_date"], today)] -= v["amount"]
+        events[max(v["recovered_date"], today)] += v["amount"]
+    for p in po_payment_events:
+        events[max(p["due_date"], today)] -= p["amount"]
+    for a in vat_acconto_events:
+        events[max(a["date"], today)] -= a["amount"]
 
+    max_date = today + timedelta(days=max_days)
     series = []
     running = latest_balance
     d = today
@@ -176,16 +398,23 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         return sum(1 for d in dates if month_start <= d <= as_of)
 
     # --- Sales ---
-    orders_raw = odoo.sales_orders(from_date=fetch_start.isoformat())
-    orders = []
-    for o in orders_raw:
+    # Fetched from year_start (not just fetch_start) so Sales Won (YTD) has a
+    # full year of data available — but `orders` below is then filtered back
+    # down to the narrower fetch_start window, so Order status/New Orders/
+    # Delayed Orders etc. keep reflecting only the recent window they always
+    # have, rather than every order confirmed since January.
+    orders_fetch_start = min(fetch_start, year_start)
+    orders_all_raw = odoo.sales_orders(from_date=orders_fetch_start.isoformat())
+    orders_all = []
+    for o in orders_all_raw:
         order_date = _date_part(o["date_order"])
-        orders.append({
+        orders_all.append({
             **o,
             "order_date": order_date,
             "commitment_date_parsed": _date_part(o.get("commitment_date")),
             "partner_name": o["partner_id"][1] if o.get("partner_id") else "(unknown)",
         })
+    orders = [o for o in orders_all if o["order_date"] and o["order_date"] >= fetch_start]
 
     # New Orders counts only confirmed sale orders ("Ordine di vendita") —
     # draft/sent quotations ("Preventivo") aren't new orders yet.
@@ -220,6 +449,15 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
 
     sales_won_mtd = sales_won_value(today)
     sales_won_mtd_yesterday = sales_won_value(yesterday)
+
+    # Same measure, but Jan 1 through today — needs the wider orders_all
+    # fetch (see above), not the MTD-window-limited `orders` list.
+    sales_won_ytd = sum(
+        o["amount_untaxed"] for o in orders_all
+        if _is_confirmed_order(o) and year_start <= o["order_date"] <= today
+    )
+
+    expected_invoiced_by_month = _expected_invoiced_by_month(odoo, today)
 
     # Revenue is actual invoiced amounts (account.move), net of VAT — a sale
     # order being confirmed doesn't mean it's been invoiced/recognized yet,
@@ -345,16 +583,55 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
 
     overdue_payables_today = [b for b in bills if b["due_date"] and b["due_date"] < today]
 
-    purchase_orders_raw = odoo.open_purchase_orders()
-    import_vat_events = _import_vat_events(purchase_orders_raw)
+    # --- Finance: forward-looking events not yet reflected in a bill/invoice ---
+    not_yet_arrived_pos = odoo.open_purchase_orders()
+    arriving_partner_ids = {po["partner_id"][0] for po in not_yet_arrived_pos if po.get("partner_id")}
+    country_by_partner = odoo.partner_countries(arriving_partner_ids)
+    import_vat_events = _import_vat_events(not_yet_arrived_pos, country_by_partner)
 
-    forecast_trend = _forecast_series(latest_balance, today, bills, invoices, import_vat_events)
-    caveats.append(
-        "Cash Flow Forecast is a draft: it only projects known open vendor bill and customer invoice due "
-        "dates, plus configured import VAT prepayment rules (config/import_vat_rules.yaml), against the "
-        "current balance — no new sales, recurring costs, or realistic payment-timing behavior are modeled "
-        "yet. Anything already overdue/due is assumed to land today rather than on its original due date."
+    confirmed_pos = odoo.confirmed_purchase_orders()
+    term_ids = {po["payment_term_id"][0] for po in confirmed_pos if po.get("payment_term_id")}
+    term_lines_raw = odoo.payment_term_lines(term_ids)
+    term_lines_by_term_id = defaultdict(list)
+    for line in term_lines_raw:
+        term_lines_by_term_id[line["payment_id"][0]].append(line)
+    po_payment_events, po_payment_issues = _po_payment_events(confirmed_pos, term_lines_by_term_id)
+
+    vat_acconto_events = _vat_acconto_events(odoo, today)
+
+    forecast_trend = _forecast_series(
+        latest_balance, today, bills, invoices, import_vat_events, po_payment_events, vat_acconto_events
     )
+    caveats.append(
+        "Cash Flow Forecast is a draft, 6 months ahead: it projects known open vendor bill and customer "
+        "invoice due dates, configured import VAT prepayment rules (config/import_vat_rules.yaml) and their "
+        "quarterly recovery, estimated payment dates for confirmed purchase orders with no vendor bill yet "
+        "(from their payment term + expected arrival date), and the configured December VAT acconto "
+        "(config/vat_acconto.yaml) — against the current balance. No new sales, recurring costs, or fully "
+        "realistic payment-timing behavior are modeled yet. Anything already overdue/due is assumed to land "
+        "today rather than on its original due date."
+    )
+    caveats.append(
+        "Import VAT self-accounted at customs (suppliers based in a listed country, see "
+        "config/import_vat_rules.yaml) is modeled as recovered at Ultima's next quarterly IVA settlement "
+        "(16 May / 20 Aug / 16 Nov, or via the annual return the following 16 March for Q4) rather than the "
+        "following month, since Ultima files quarterly, not monthly."
+    )
+    if any(e.get("estimated") for e in vat_acconto_events):
+        caveats.append(
+            "The December acconto IVA is auto-estimated (metodo storico: 88% of the prior year's Oct-Dec "
+            "output VAT minus input VAT, from posted invoices/bills) unless overridden in "
+            "config/vat_acconto.yaml. This estimate does NOT include self-accounted import VAT actually paid "
+            "in that historical quarter (Odoo has no queryable record of past customs payments) or other VAT "
+            "return adjustments, so it likely UNDERSTATES the true reference liability — set the actual filed "
+            "rigo VH4 figure in config/vat_acconto.yaml once known, which always takes precedence."
+        )
+    if po_payment_issues:
+        caveats.append(
+            "Confirmed purchase orders missing what's needed to estimate their payment date (no payment "
+            "term set, no expected arrival date, or a payment-term schedule not yet supported here) are "
+            "excluded from the forecast rather than guessed at: " + "; ".join(po_payment_issues)
+        )
     caveats.append(
         "Quotes Raised 'yesterday' uses each order's CURRENT state, not its state as of yesterday — a "
         "quote raised yesterday but already confirmed into a sale order by today would drop out of both "
@@ -365,6 +642,13 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         "'Ordine di vendita' in Odoo's Italian UI); draft/sent quotations ('Preventivo') are excluded. "
         "Sales Won is order value (net of VAT), by order date — not invoiced revenue, so it can differ "
         "from Revenue (MTD, invoiced)."
+    )
+    caveats.append(
+        "Expected Invoiced by Month assumes deliveries land on their promised date (commitment_date, "
+        "'Data Consegna') and are invoiced immediately ('fatture immediate') — a delayed delivery shows in "
+        "the month it was originally promised, not when it actually ships, and this doesn't model deliveries "
+        "on orders not yet confirmed. Uses each line's remaining amount to invoice (net of VAT), not the "
+        "order's full value, so a partially-invoiced order only contributes what's left to invoice."
     )
 
     receivables_aging = defaultdict(float)
@@ -388,6 +672,7 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "new_orders_yesterday": new_orders_yesterday,
             "sales_won_mtd": sales_won_mtd,
             "sales_won_mtd_yesterday": sales_won_mtd_yesterday,
+            "sales_won_ytd": sales_won_ytd,
             "delayed_orders": delayed_today,
             "delayed_orders_count_yesterday": delayed_yesterday_count,
             "in_progress_orders": in_progress_today,
@@ -400,6 +685,7 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "gp_revenue_total": gp_revenue_total,
             "quotes_raised_mtd": quotes_raised_mtd,
             "quotes_raised_mtd_yesterday": quotes_raised_mtd_yesterday,
+            "expected_invoiced_by_month": expected_invoiced_by_month,
         },
         "finance": {
             "latest_balance": latest_balance,
@@ -419,5 +705,8 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "payables_aging": dict(payables_aging),
             "forecast_trend": forecast_trend,
             "import_vat_events": sorted(import_vat_events, key=lambda e: e["due_date"]),
+            "po_payment_events": sorted(po_payment_events, key=lambda e: e["due_date"]),
+            "po_payment_issues": po_payment_issues,
+            "vat_acconto_events": vat_acconto_events,
         },
     }
