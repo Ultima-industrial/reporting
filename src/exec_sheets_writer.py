@@ -202,8 +202,8 @@ class ExecSheetsWriter:
             self._write_block(ws, start, 1, caveat_rows)
             ws.merge_cells(f"A{start}:F{start}")
 
-    def write_sales(self, orders_rows, revenue_trend_rows, status_rows, top_customer_rows):
-        ws = self._get_or_create_tab("Sales", cols=20, rows=max(60, len(orders_rows) + 10))
+    def write_sales(self, orders_rows, revenue_trend_rows, status_rows, top_customer_rows, expected_invoiced_rows):
+        ws = self._get_or_create_tab("Sales", cols=23, rows=max(60, len(orders_rows) + 10))
         self._delete_charts(ws)
 
         header = ["Order", "Customer", "Order Date", "Amount", "Odoo State", "Delivery Status", "Commitment Date", "Status"]
@@ -218,12 +218,16 @@ class ExecSheetsWriter:
         cust_header = ["Customer", "Total (MTD, invoiced)"]
         self._write_block(ws, 1, 16, [cust_header] + top_customer_rows)
 
-        chart_row = max(len(orders_rows), len(revenue_trend_rows), len(status_rows), len(top_customer_rows)) + 4
+        expected_header = ["Month", "Expected Invoiced (net, by delivery date)"]
+        self._write_block(ws, 1, 19, [expected_header] + expected_invoiced_rows)
+
+        chart_row = max(len(orders_rows), len(revenue_trend_rows), len(status_rows), len(top_customer_rows), len(expected_invoiced_rows)) + 4
         self.add_line_chart(ws, "Revenue Trend (invoiced, 30 days)", 2, len(revenue_trend_rows), domain_col=10, series_cols=[11], anchor_row=chart_row, anchor_col=1)
         self.add_pie_chart(ws, "Order Status Breakdown", 2, len(status_rows), label_col=13, value_col=14, anchor_row=chart_row, anchor_col=10)
+        self.add_column_chart(ws, "Expected Invoiced by Month (6 months)", 2, len(expected_invoiced_rows), domain_col=19, series_cols=[20], anchor_row=chart_row, anchor_col=19)
 
-    def write_finance(self, open_items_rows, cash_trend_rows, aging_rows, forecast_rows, import_vat_rows):
-        ws = self._get_or_create_tab("Finance", cols=24, rows=max(80, len(open_items_rows) + len(forecast_rows) + 30))
+    def write_finance(self, open_items_rows, cash_trend_rows, aging_rows, forecast_rows, import_vat_rows, po_payment_rows):
+        ws = self._get_or_create_tab("Finance", cols=30, rows=max(80, len(open_items_rows) + len(forecast_rows) + 30))
         self._delete_charts(ws)
 
         header = ["Type", "Reference", "Counterparty", "Due Date", "Amount", "Aging Bucket"]
@@ -238,12 +242,15 @@ class ExecSheetsWriter:
         forecast_header = ["Date", "Projected Balance"]
         self._write_block(ws, 1, 17, [forecast_header] + forecast_rows)
 
-        import_vat_header = ["PO", "Supplier", "Due Date", "Amount", "Rule"]
+        import_vat_header = ["PO", "Supplier", "Due Date", "Amount", "Recovers", "Rule"]
         self._write_block(ws, 1, 20, [import_vat_header] + import_vat_rows)
+
+        po_payment_header = ["PO", "Supplier", "Est. Due Date", "Amount"]
+        self._write_block(ws, 1, 27, [po_payment_header] + po_payment_rows)
 
         chart_row = max(len(open_items_rows), len(cash_trend_rows), len(aging_rows), len(forecast_rows)) + 4
         self.add_line_chart(ws, "Cash Flow / Balance Trend (30 days)", 2, len(cash_trend_rows), domain_col=9, series_cols=[11], anchor_row=chart_row, anchor_col=1)
         self.add_column_chart(ws, "Receivables / Payables Aging", 2, len(aging_rows), domain_col=13, series_cols=[14, 15], anchor_row=chart_row, anchor_col=10)
 
         chart_row_2 = chart_row + 20
-        self.add_line_chart(ws, "Cash Flow Forecast (draft)", 2, len(forecast_rows), domain_col=17, series_cols=[18], anchor_row=chart_row_2, anchor_col=1)
+        self.add_line_chart(ws, "Cash Flow Forecast (draft, 6 months)", 2, len(forecast_rows), domain_col=17, series_cols=[18], anchor_row=chart_row_2, anchor_col=1)
