@@ -35,6 +35,7 @@ def _build_payload(data):
             "revenue_today": s["revenue_today"], "revenue_yesterday": s["revenue_yesterday"],
             "revenue_last_month": s["revenue_last_month"], "revenue_ytd": s["revenue_ytd"],
             "new_orders_today": s["new_orders_today"], "new_orders_yesterday": s["new_orders_yesterday"],
+            "sales_won_mtd": s["sales_won_mtd"], "sales_won_mtd_yesterday": s["sales_won_mtd_yesterday"],
             "delayed_orders": len(s["delayed_orders"]), "delayed_orders_yesterday": s["delayed_orders_count_yesterday"],
             "cash_flow_today": f["cash_flow_today"], "cash_flow_yesterday": f["cash_flow_yesterday"],
             "overdue_receivables_today": overdue_today_total, "overdue_receivables_yesterday": f["overdue_receivables_yesterday_total"],
