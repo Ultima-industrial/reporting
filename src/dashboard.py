@@ -36,6 +36,7 @@ def _build_payload(data):
             "revenue_last_month": s["revenue_last_month"], "revenue_ytd": s["revenue_ytd"],
             "new_orders_today": s["new_orders_today"], "new_orders_yesterday": s["new_orders_yesterday"],
             "sales_won_mtd": s["sales_won_mtd"], "sales_won_mtd_yesterday": s["sales_won_mtd_yesterday"],
+            "sales_won_ytd": s["sales_won_ytd"],
             "delayed_orders": len(s["delayed_orders"]), "delayed_orders_yesterday": s["delayed_orders_count_yesterday"],
             "cash_flow_today": f["cash_flow_today"], "cash_flow_yesterday": f["cash_flow_yesterday"],
             "overdue_receivables_today": overdue_today_total, "overdue_receivables_yesterday": f["overdue_receivables_yesterday_total"],
@@ -44,8 +45,10 @@ def _build_payload(data):
             "open_receivables_total": sum(float(i["amount_residual"]) for i in f["open_invoices"]), "open_receivables_count": len(f["open_invoices"]),
             "gp_percent": s["gp_percent"], "gp_coverage_percent": s["gp_coverage_percent"],
             "quotes_raised_mtd": s["quotes_raised_mtd"], "quotes_raised_mtd_yesterday": s["quotes_raised_mtd_yesterday"],
+            "po_payment_issues_count": len(f["po_payment_issues"]),
         },
         "revenue_trend": [[d.isoformat(), amt] for d, amt in s["revenue_trend"]],
+        "expected_invoiced_by_month": [[d.isoformat(), amt] for d, amt in s["expected_invoiced_by_month"]],
         "balance_trend": [[d.isoformat(), bal] for d, bal in f["balance_trend"]],
         "forecast_trend": [[d.isoformat(), bal] for d, bal in f["forecast_trend"]],
         "status_breakdown": s["status_breakdown"],
@@ -65,8 +68,19 @@ def _build_payload(data):
         ], key=lambda r: -r["amount"])[:8],
         "import_vat_events": [
             {"po_name": e["po_name"], "supplier": e["supplier"],
-             "due_date": e["due_date"].isoformat(), "amount": e["amount"], "rule": e["rule"]}
+             "due_date": e["due_date"].isoformat(), "recovered_date": e["recovered_date"].isoformat(),
+             "amount": e["amount"], "rule": e["rule"]}
             for e in f["import_vat_events"]
+        ],
+        "po_payment_events": [
+            {"po_name": e["po_name"], "supplier": e["supplier"],
+             "due_date": e["due_date"].isoformat(), "amount": e["amount"]}
+            for e in f["po_payment_events"]
+        ],
+        "po_payment_issues": f["po_payment_issues"],
+        "vat_acconto_events": [
+            {"date": e["date"].isoformat(), "amount": e["amount"], "estimated": e["estimated"]}
+            for e in f["vat_acconto_events"]
         ],
     }
 
