@@ -184,6 +184,23 @@
     font-size:.95rem; line-height:1.65; color:var(--text-muted); max-width:68ch;
     margin:0 0 1.5rem;
   }
+
+  /* ---- Hero stat (Sales Won YTD) ---- */
+  .hero{
+    display:flex; align-items:baseline; gap:1.1rem; flex-wrap:wrap;
+    background:var(--surface); border:1px solid var(--border); border-radius:8px;
+    padding:1.1rem 1.4rem; margin-bottom:1.75rem;
+  }
+  .hero .hero-label{
+    font-size:.72rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-faint); font-weight:600;
+  }
+  .hero .hero-value{
+    font-family:'Big Shoulders Display', sans-serif; font-weight:800; font-size:2.4rem; line-height:1;
+    color:var(--accent-strong); font-variant-numeric:tabular-nums;
+  }
+  .hero .hero-sub{font-size:.8rem; color:var(--text-faint);}
+
+  .panel-wide{margin-bottom:1.25rem;}
 </style>
 
 <div class="wrap">
@@ -202,6 +219,8 @@
 
   <p class="narrative" id="narrative"></p>
 
+  <div class="hero" id="salesWonYtd"></div>
+
   <div id="banner"></div>
 
   <div class="kpi-row" id="kpiRow"></div>
@@ -215,6 +234,11 @@
         <p class="block-title">Revenue trend &mdash; invoiced, 30 days</p>
         <svg id="revenueChart" viewBox="0 0 560 170"></svg>
         <div class="chart-caption" id="revenueCaption"></div>
+      </div>
+
+      <div class="chart-block">
+        <p class="block-title">Expected invoiced revenue &mdash; next 6 months, by delivery date</p>
+        <svg id="expectedInvoicedChart" viewBox="0 0 560 170"></svg>
       </div>
 
       <div>
@@ -236,12 +260,6 @@
         <p class="block-title">Cash balance trend &mdash; 30 days</p>
         <svg id="balanceChart" viewBox="0 0 560 170"></svg>
         <div class="chart-caption" id="balanceCaption"></div>
-      </div>
-
-      <div class="chart-block">
-        <p class="block-title">Cash flow forecast &mdash; draft</p>
-        <svg id="forecastChart" viewBox="0 0 560 170"></svg>
-        <div class="chart-caption" id="forecastCaption"></div>
       </div>
 
       <div>
@@ -273,14 +291,34 @@
           <table class="data" id="importVatTable"></table>
         </div>
       </div>
+
+      <div id="poPaymentBlock">
+        <p class="block-title">Confirmed orders awaiting invoice &mdash; estimated due date</p>
+        <div class="table-wrap">
+          <table class="data" id="poPaymentTable"></table>
+        </div>
+        <ul id="poPaymentIssues" style="margin:.6rem 0 0; padding-left:1.1rem; font-size:.74rem; color:var(--critical);"></ul>
+      </div>
     </section>
 
   </div>
 
+  <section class="panel panel-wide">
+    <h2><span class="dot"></span>Cash Flow Forecast &mdash; draft, 6 months</h2>
+    <div class="chart-block">
+      <svg id="forecastChart" viewBox="0 0 1120 260"></svg>
+      <div class="chart-caption" id="forecastCaption"></div>
+    </div>
+  </section>
+
   <footer>
     <p><b>Overdue receivables &mdash; yesterday</b> is approximated from today's open-invoice snapshot (Odoo only exposes currently-open invoices, not a historical one), so it slightly undercounts anything paid since yesterday.</p>
     <p id="gpCaveat"></p>
-    <p><b>Cash flow forecast</b> is a draft: it only projects known open vendor bill and customer invoice due dates, plus configured import VAT prepayment rules, against the current balance &mdash; no new sales, recurring costs, or realistic payment-timing behavior are modeled yet. Anything already overdue/due is assumed to land today rather than on its original due date.</p>
+    <p><b>Cash flow forecast</b> is a draft, 6 months ahead: it projects known open vendor bill and customer invoice due dates, configured import VAT prepayment rules and their quarterly recovery, estimated payment dates for confirmed purchase orders with no vendor bill yet (from their payment term + expected arrival date), and the configured December VAT acconto &mdash; against the current balance. No new sales, recurring costs, or fully realistic payment-timing behavior are modeled yet. Anything already overdue/due is assumed to land today rather than on its original due date.</p>
+    <p><b>Import VAT recovery</b> (suppliers based in a listed country, see config/import_vat_rules.yaml) is modeled as recovered at Ultima's next quarterly IVA settlement (16 May / 20 Aug / 16 Nov, or via the annual return the following 16 March for Q4) rather than the following month, since Ultima files quarterly, not monthly.</p>
+    <p id="acontoCaveat"></p>
+    <p><b>Confirmed orders awaiting invoice</b> shows an estimated payment date computed from each purchase order's payment term ("termini di pagamento") plus its expected arrival date &mdash; an approximation until a real vendor bill exists, worth sanity-checking against a few real POs. A PO missing a payment term, an expected arrival date, or using a payment-term schedule not yet supported is excluded here and flagged instead (see "Needs attention" above if any exist).</p>
+    <p><b>Expected invoiced revenue by month</b> assumes deliveries land on their promised date (commitment_date, "Data Consegna") and are invoiced immediately ("fatture immediate") &mdash; a delayed delivery shows in the month it was originally promised, not when it actually ships. Uses each order line's remaining amount to invoice (net of VAT), not the order's full value, so a partially-invoiced order only contributes what's left to invoice.</p>
     <p><b>Quotes raised &mdash; yesterday</b> uses each order's current state, not its state as of yesterday &mdash; a quote raised yesterday but already confirmed into a sale order by today drops out of both figures rather than staying counted in yesterday's.</p>
     <p><b>New Orders (MTD)</b> and <b>Sales Won (MTD)</b> count only confirmed sale orders (Odoo state &ldquo;Ordine di vendita&rdquo;) &mdash; draft/sent quotations (&ldquo;Preventivo&rdquo;) are excluded. Sales Won is order value (net of VAT), by order date, not invoiced revenue, so it can differ from Revenue (MTD, invoiced).</p>
     <p>Source: Odoo (sale orders, bank feed, open invoices/bills), read-only. Ask for a refresh any time to pull a new snapshot.</p>
@@ -339,6 +377,19 @@ const SYNC_ENDPOINT = 'https://ultima-pulse-sync.lloyd-casavecchia.workers.dev/'
   });
 })();
 
+(function renderAcontoCaveat(){
+  const el = document.getElementById('acontoCaveat');
+  const events = DATA.vat_acconto_events || [];
+  const estimated = events.find(e => e.estimated);
+  if (estimated) {
+    el.innerHTML = `<b>December acconto IVA</b> (${fmtMoney(estimated.amount)}, due 27 Dec ${estimated.date.slice(0,4)}) is auto-estimated via the "metodo storico" (88% of the prior year's Oct-Dec output VAT minus input VAT) — this does NOT include self-accounted import VAT actually paid in that historical quarter or other VAT return adjustments, so it likely understates the true reference liability. Set the actual filed rigo VH4 figure in config/vat_acconto.yaml once known, which always takes precedence over this estimate.`;
+  } else if (events.length) {
+    el.innerHTML = `<b>December acconto IVA</b> (${fmtMoney(events[0].amount)}, due 27 Dec ${events[0].date.slice(0,4)}) uses the figure set in config/vat_acconto.yaml.`;
+  } else {
+    el.remove();
+  }
+})();
+
 (function renderGpCaveat(){
   const el = document.getElementById('gpCaveat');
   const gp = DATA.kpis.gp_percent;
@@ -356,10 +407,21 @@ const SYNC_ENDPOINT = 'https://ultima-pulse-sync.lloyd-casavecchia.workers.dev/'
   const issues = [];
   if (DATA.kpis.delayed_orders > 0) issues.push(`${DATA.kpis.delayed_orders} order${DATA.kpis.delayed_orders>1?'s':''} past commitment date`);
   if (DATA.kpis.overdue_receivables_today > 0) issues.push(`${fmtMoney(DATA.kpis.overdue_receivables_today)} in overdue receivables`);
+  if (DATA.kpis.po_payment_issues_count > 0) issues.push(`${DATA.kpis.po_payment_issues_count} purchase order${DATA.kpis.po_payment_issues_count>1?'s':''} missing data needed to forecast their payment date`);
   const el = document.getElementById('banner');
   if (!issues.length) { el.remove(); return; }
   el.className = 'banner';
   el.innerHTML = `<span class="stripe">!</span><p><strong>Needs attention:</strong> ${issues.join(' \u00B7 ')}.</p>`;
+})();
+
+// ---------- Hero: Sales Won (YTD) ----------
+(function renderHero(){
+  const el = document.getElementById('salesWonYtd');
+  el.innerHTML = `
+    <span class="hero-label">Sales Won (YTD)</span>
+    <span class="hero-value">${fmtMoney(DATA.kpis.sales_won_ytd)}</span>
+    <span class="hero-sub">confirmed sale orders, net of VAT, Jan 1 through today</span>
+  `;
 })();
 
 // ---------- KPI row ----------
@@ -451,7 +513,7 @@ function lineChart(svgEl, series, {color, w=560, h=170, pad=28}){
 
 lineChart(document.getElementById('revenueChart'), DATA.revenue_trend, {color:'var(--accent)'});
 lineChart(document.getElementById('balanceChart'), DATA.balance_trend, {color:'var(--accent)'});
-lineChart(document.getElementById('forecastChart'), DATA.forecast_trend, {color:'var(--accent)'});
+lineChart(document.getElementById('forecastChart'), DATA.forecast_trend, {color:'var(--accent)', w:1120, h:260, pad:40});
 
 document.getElementById('revenueCaption').innerHTML =
   `<span>${fmtDateShort(DATA.revenue_trend[0][0])}</span><b>${fmtMoney(DATA.revenue_trend.reduce((s,d)=>s+d[1],0))} total</b><span>${fmtDateShort(DATA.revenue_trend[DATA.revenue_trend.length-1][0])}</span>`;
@@ -459,6 +521,34 @@ document.getElementById('balanceCaption').innerHTML =
   `<span>${fmtDateShort(DATA.balance_trend[0][0])}</span><b>${fmtMoney(DATA.balance_trend[DATA.balance_trend.length-1][1])} now</b><span>${fmtDateShort(DATA.balance_trend[DATA.balance_trend.length-1][0])}</span>`;
 document.getElementById('forecastCaption').innerHTML =
   `<span>${fmtDateShort(DATA.forecast_trend[0][0])}</span><b>${fmtMoney(DATA.forecast_trend[DATA.forecast_trend.length-1][1])} projected</b><span>${fmtDateShort(DATA.forecast_trend[DATA.forecast_trend.length-1][0])}</span>`;
+
+// ---------- Expected invoiced revenue by month ----------
+(function renderExpectedInvoiced(){
+  const svg = document.getElementById('expectedInvoicedChart');
+  const data = DATA.expected_invoiced_by_month || [];
+  if (!data.length) { svg.closest('.chart-block').remove(); return; }
+  const w = 560, h = 170, pad = 28, bottomPad = 20;
+  const chartH = h - pad*0.6 - bottomPad;
+  const max = Math.max(...data.map(d=>d[1]), 1);
+  const groupW = (w - pad*2) / data.length;
+  const barW = groupW * 0.55;
+
+  const gridLines = [0.25, 0.5, 0.75].map(f => {
+    const gy = pad*0.6 + chartH*(1-f);
+    return `<line x1="${pad}" y1="${gy.toFixed(1)}" x2="${w-pad}" y2="${gy.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`;
+  }).join('');
+
+  let bars = '';
+  data.forEach(([iso, amt], i) => {
+    const gx = pad + i*groupW;
+    const barH = (amt/max) * chartH;
+    const d = new Date(iso+'T00:00:00');
+    const label = d.toLocaleDateString('en-GB', {month:'short'});
+    bars += `<rect x="${(gx+groupW/2-barW/2).toFixed(1)}" y="${(pad*0.6+chartH-barH).toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="var(--accent)"/>`;
+    bars += `<text x="${(gx+groupW/2).toFixed(1)}" y="${h-6}" text-anchor="middle" font-size="10.5" fill="var(--text-faint)" font-family="IBM Plex Sans, sans-serif">${label}</text>`;
+  });
+  svg.innerHTML = `${gridLines}<line x1="${pad}" y1="${pad*0.6+chartH}" x2="${w-pad}" y2="${pad*0.6+chartH}" stroke="var(--border)"/>${bars}`;
+})();
 
 // ---------- Order status ----------
 (function renderStatus(){
@@ -543,7 +633,7 @@ renderTable('billsTable', DATA.open_bills_list, {emptyMsg:'No open vendor bills.
   const events = DATA.import_vat_events || [];
   if (!events.length) { block.remove(); return; }
   document.getElementById('importVatTable').innerHTML = `
-    <thead><tr><th>PO</th><th>Supplier</th><th>Due</th><th style="text-align:right">Amount</th><th>Rule</th></tr></thead>
+    <thead><tr><th>PO</th><th>Supplier</th><th>Due</th><th style="text-align:right">Amount</th><th>Recovers</th><th>Rule</th></tr></thead>
     <tbody>
       ${events.map(e => `
         <tr>
@@ -551,10 +641,23 @@ renderTable('billsTable', DATA.open_bills_list, {emptyMsg:'No open vendor bills.
           <td>${e.supplier}</td>
           <td>${fmtDateShort(e.due_date)}${isLate(e.due_date) ? ' <span class="pill late">late</span>' : ''}</td>
           <td class="num">${fmtMoney(-e.amount)}</td>
+          <td>${fmtDateShort(e.recovered_date)}</td>
           <td style="color:var(--text-faint); font-size:.74rem;">${e.rule}</td>
         </tr>
       `).join('')}
     </tbody>
   `;
+})();
+
+// ---------- Confirmed orders awaiting invoice (estimated payment dates) ----------
+(function renderPoPayments(){
+  const block = document.getElementById('poPaymentBlock');
+  const events = DATA.po_payment_events || [];
+  const issues = DATA.po_payment_issues || [];
+  if (!events.length && !issues.length) { block.remove(); return; }
+  renderTable('poPaymentTable', events.map(e => ({
+    name: e.po_name, customer: e.supplier, due_date: e.due_date, amount: -e.amount,
+  })), {emptyMsg: 'No confirmed purchase orders awaiting invoice.'});
+  document.getElementById('poPaymentIssues').innerHTML = issues.map(msg => `<li>${msg}</li>`).join('');
 })();
 </script>
