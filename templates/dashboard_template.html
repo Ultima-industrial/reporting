@@ -282,6 +282,7 @@
     <p id="gpCaveat"></p>
     <p><b>Cash flow forecast</b> is a draft: it only projects known open vendor bill and customer invoice due dates, plus configured import VAT prepayment rules, against the current balance &mdash; no new sales, recurring costs, or realistic payment-timing behavior are modeled yet. Anything already overdue/due is assumed to land today rather than on its original due date.</p>
     <p><b>Quotes raised &mdash; yesterday</b> uses each order's current state, not its state as of yesterday &mdash; a quote raised yesterday but already confirmed into a sale order by today drops out of both figures rather than staying counted in yesterday's.</p>
+    <p><b>New Orders (MTD)</b> and <b>Sales Won (MTD)</b> count only confirmed sale orders (Odoo state &ldquo;Ordine di vendita&rdquo;) &mdash; draft/sent quotations (&ldquo;Preventivo&rdquo;) are excluded. Sales Won is order value (net of VAT), by order date, not invoiced revenue, so it can differ from Revenue (MTD, invoiced).</p>
     <p>Source: Odoo (sale orders, bank feed, open invoices/bills), read-only. Ask for a refresh any time to pull a new snapshot.</p>
   </footer>
 
@@ -383,6 +384,7 @@ const SYNC_ENDPOINT = 'https://ultima-pulse-sync.lloyd-casavecchia.workers.dev/'
 
   const k = DATA.kpis;
   const cards = [
+    {label:'Sales Won (MTD)', value: fmtMoney(k.sales_won_mtd), delta: deltaChip(k.sales_won_mtd - k.sales_won_mtd_yesterday, false), sub:`${fmtMoney(k.sales_won_mtd_yesterday)} through yesterday`},
     {label:'Revenue (MTD, invoiced)', value: fmtMoney(k.revenue_today), delta: deltaChip(k.revenue_today - k.revenue_yesterday, false), sub:`${fmtMoney(k.revenue_yesterday)} through yesterday`},
     {label:'Revenue (Last Month)', value: fmtMoney(k.revenue_last_month), delta:'', sub:'full previous calendar month'},
     {label:'Revenue (Year-to-Date)', value: fmtMoney(k.revenue_ytd), delta:'', sub:'Jan 1 through today'},
