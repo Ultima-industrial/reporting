@@ -111,6 +111,10 @@ def _top_customer_rows(data):
     return [[name, total] for name, total in data["sales"]["top_customers"]]
 
 
+def _expected_invoiced_rows(data):
+    return [[d.isoformat(), amount] for d, amount in data["sales"]["expected_invoiced_by_month"]]
+
+
 def _open_items_rows(data):
     rows = []
     for b in data["finance"]["open_bills"]:
@@ -140,8 +144,15 @@ def _forecast_rows(data):
 
 def _import_vat_rows(data):
     return [
-        [e["po_name"], e["supplier"], e["due_date"].isoformat(), -e["amount"], e["rule"]]
+        [e["po_name"], e["supplier"], e["due_date"].isoformat(), -e["amount"], e["recovered_date"].isoformat(), e["rule"]]
         for e in data["finance"]["import_vat_events"]
+    ]
+
+
+def _po_payment_rows(data):
+    return [
+        [e["po_name"], e["supplier"], e["due_date"].isoformat(), -e["amount"]]
+        for e in data["finance"]["po_payment_events"]
     ]
 
 
@@ -166,5 +177,11 @@ def run():
     )
 
     sheets.write_summary(_narrative(data), _key_figures_rows(data), data["caveats"])
-    sheets.write_sales(_orders_rows(data), _revenue_trend_rows(data), _status_rows(data), _top_customer_rows(data))
-    sheets.write_finance(_open_items_rows(data), _cash_trend_rows(data), _aging_rows(data), _forecast_rows(data), _import_vat_rows(data))
+    sheets.write_sales(
+        _orders_rows(data), _revenue_trend_rows(data), _status_rows(data), _top_customer_rows(data),
+        _expected_invoiced_rows(data),
+    )
+    sheets.write_finance(
+        _open_items_rows(data), _cash_trend_rows(data), _aging_rows(data), _forecast_rows(data),
+        _import_vat_rows(data), _po_payment_rows(data),
+    )
