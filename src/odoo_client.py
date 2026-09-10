@@ -95,14 +95,31 @@ class OdooClient:
         or after from_date — used for actual invoiced revenue, unlike
         open_customer_invoices() which only returns currently-unpaid ones.
         amount_untaxed (net of VAT) is the revenue figure — amount_total
-        mixes VAT-inclusive and VAT-exempt invoices inconsistently."""
+        mixes VAT-inclusive and VAT-exempt invoices inconsistently.
+        amount_tax is used separately for the December VAT acconto estimate
+        (see exec_data._vat_acconto_reference_liability)."""
         domain = [["move_type", "=", "out_invoice"], ["state", "=", "posted"]]
         if from_date:
             domain.append(["invoice_date", ">=", from_date])
         return self._search_read(
             "account.move",
             domain,
-            ["name", "partner_id", "invoice_date", "amount_untaxed"],
+            ["name", "partner_id", "invoice_date", "amount_untaxed", "amount_tax"],
+        )
+
+    def posted_vendor_bills(self, from_date=None):
+        """All posted vendor bills (paid or not), with invoice_date and
+        amount_tax — unlike open_vendor_bills() (currently-unpaid only,
+        no invoice_date/amount_tax), used to approximate VAT liability for
+        a past period (the December acconto IVA's storico-method reference
+        quarter, see exec_data._vat_acconto_reference_liability)."""
+        domain = [["move_type", "=", "in_invoice"], ["state", "=", "posted"]]
+        if from_date:
+            domain.append(["invoice_date", ">=", from_date])
+        return self._search_read(
+            "account.move",
+            domain,
+            ["name", "partner_id", "invoice_date", "amount_tax"],
         )
 
     def invoiced_lines_with_cost(self, from_date=None):
@@ -147,13 +164,59 @@ class OdooClient:
     def open_purchase_orders(self):
         """Confirmed purchase orders not yet arrived (state='purchase',
         effective_date not set) — the ones a forward cash flow forecast
-        cares about. date_planned is Odoo's "Expected Arrival" field
-        (labeled "Arrivo Previsto" in the Italian UI)."""
+        cares about for import VAT self-accounting. date_planned is Odoo's
+        "Expected Arrival" field (labeled "Arrivo Previsto" in the Italian
+        UI)."""
         return self._search_read(
             "purchase.order",
             [["state", "=", "purchase"], ["effective_date", "=", False]],
             ["name", "partner_id", "amount_total", "date_planned"],
         )
+
+    def confirmed_purchase_orders(self):
+        """All confirmed purchase orders (state 'purchase'/'done'), arrived
+        or not — used to estimate a payment date for orders with no vendor
+        bill yet (see exec_data._po_payment_events). Unlike
+        open_purchase_orders(), not restricted to "not yet arrived" — the
+        payment owed to the supplier is a separate concern from customs
+        import VAT, and can fall due before or after arrival. invoice_ids
+        tells us whether a real bill already exists for this PO."""
+        return self._search_read(
+            "purchase.order",
+            [["state", "in", ["purchase", "done"]]],
+            ["name", "partner_id", "date_order", "date_planned", "amount_total",
+             "payment_term_id", "invoice_ids"],
+        )
+
+    def payment_term_lines(self, term_ids):
+        """Lines of the given account.payment.term records, used to compute
+        an estimated due-date split for a PO before any vendor bill exists.
+        payment_id is the line's parent term (the M2O back-reference)."""
+        term_ids = sorted(set(term_ids))
+        if not term_ids:
+            return []
+        return self._search_read(
+            "account.payment.term.line",
+            [["payment_id", "in", term_ids]],
+            ["payment_id", "value", "value_amount", "nb_days", "delay_type"],
+        )
+
+    def partner_countries(self, partner_ids):
+        """Maps partner id -> ISO country code (e.g. 'GB'), for matching the
+        import VAT country rule (config/import_vat_rules.yaml). Two-hop
+        lookup since search_read can't follow a many2one's own fields
+        directly: res.partner.country_id (id only) -> res.country.code."""
+        partner_ids = sorted(set(partner_ids))
+        if not partner_ids:
+            return {}
+        partners = self._search_read("res.partner", [["id", "in", partner_ids]], ["country_id"])
+        country_ids = {p["country_id"][0] for p in partners if p.get("country_id")}
+        countries = self._search_read("res.country", [["id", "in", list(country_ids)]], ["code"])
+        code_by_country_id = {c["id"]: c["code"] for c in countries}
+        return {
+            p["id"]: (code_by_country_id.get(p["country_id"][0]) if p.get("country_id") else None)
+            for p in partners
+        }
 
     def sales_orders(self, from_date=None):
         """Sale orders (quotations + confirmed), excluding cancelled, with the
@@ -170,3 +233,40 @@ class OdooClient:
             ["name", "partner_id", "date_order", "amount_total", "amount_untaxed", "state",
              "invoice_status", "delivery_status", "commitment_date"],
         )
+
+    def confirmed_order_lines_to_invoice_by_delivery_date(self, start_date, end_date):
+        """Product lines of confirmed sale orders (state 'sale'/'done') with
+        a promised delivery date (commitment_date, "Data Consegna" in the
+        Italian UI) in [start_date, end_date] — used to forecast expected
+        invoiced revenue by month, since Ultima invoices immediately on
+        delivery ("fatture immediate"). untaxed_amount_to_invoice is Odoo's
+        own computed "remaining to invoice" value per line (net of VAT) —
+        it already nets out whatever's been invoiced so far, so a
+        partially-invoiced order only contributes its true remaining
+        value rather than double-counting against actual Revenue.
+        display_type=False excludes section/note pseudo-lines, which carry
+        no monetary value. order_id is returned (not the order's own
+        commitment_date, which search_read can't follow through a
+        relation) — see order_commitment_dates() for the matching lookup."""
+        domain = [
+            ["order_id.state", "in", ["sale", "done"]],
+            ["order_id.commitment_date", ">=", start_date],
+            ["order_id.commitment_date", "<=", end_date],
+            ["display_type", "=", False],
+        ]
+        return self._search_read(
+            "sale.order.line",
+            domain,
+            ["order_id", "untaxed_amount_to_invoice"],
+        )
+
+    def order_commitment_dates(self, order_ids):
+        """Maps sale.order id -> raw commitment_date string, for lines
+        fetched via confirmed_order_lines_to_invoice_by_delivery_date
+        (which queries sale.order.line and so can't return the parent
+        order's own field directly)."""
+        order_ids = sorted(set(order_ids))
+        if not order_ids:
+            return {}
+        orders = self._search_read("sale.order", [["id", "in", order_ids]], ["commitment_date"])
+        return {o["id"]: o["commitment_date"] for o in orders}
