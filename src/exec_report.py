@@ -60,6 +60,9 @@ def _key_figures_rows(data):
     overdue_today_total = sum(float(i["amount_residual"]) for i in f["overdue_receivables_today"])
 
     rows = [
+        ["Sales Won (MTD)", s["sales_won_mtd"], s["sales_won_mtd_yesterday"],
+         s["sales_won_mtd"] - s["sales_won_mtd_yesterday"],
+         "Confirmed sale orders ('Ordine di vendita'), by order date, net of VAT — not invoiced revenue", "money"],
         ["Revenue (MTD, invoiced)", s["revenue_today"], s["revenue_yesterday"],
          s["revenue_today"] - s["revenue_yesterday"], "Posted customer invoices, month-to-date, net of VAT", "money"],
         ["Revenue (Last Month)", s["revenue_last_month"], "", "", "Full previous calendar month, invoiced, net of VAT", "money"],
