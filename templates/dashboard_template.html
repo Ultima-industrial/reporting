@@ -548,27 +548,30 @@ document.getElementById('forecastCaption').innerHTML =
   const svg = document.getElementById('expectedInvoicedChart');
   const data = DATA.expected_invoiced_by_month || [];
   if (!data.length) { svg.closest('.chart-block').remove(); return; }
-  const w = 560, h = 170, pad = 28, bottomPad = 20;
-  const chartH = h - pad*0.6 - bottomPad;
+  const w = 560, h = 170, topPad = 24, bottomPad = 20, sidePad = 28;
+  const chartH = h - topPad - bottomPad;
   const max = Math.max(...data.map(d=>d[1]), 1);
-  const groupW = (w - pad*2) / data.length;
+  const groupW = (w - sidePad*2) / data.length;
   const barW = groupW * 0.55;
+  const fmtShort = n => Math.abs(n) >= 1000 ? '€' + (n/1000).toFixed(1) + 'k' : '€' + n.toFixed(0);
 
   const gridLines = [0.25, 0.5, 0.75].map(f => {
-    const gy = pad*0.6 + chartH*(1-f);
-    return `<line x1="${pad}" y1="${gy.toFixed(1)}" x2="${w-pad}" y2="${gy.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`;
+    const gy = topPad + chartH*(1-f);
+    return `<line x1="${sidePad}" y1="${gy.toFixed(1)}" x2="${w-sidePad}" y2="${gy.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`;
   }).join('');
 
   let bars = '';
   data.forEach(([iso, amt], i) => {
-    const gx = pad + i*groupW;
+    const gx = sidePad + i*groupW;
     const barH = (amt/max) * chartH;
+    const barTop = topPad + chartH - barH;
     const d = new Date(iso+'T00:00:00');
     const label = d.toLocaleDateString('en-GB', {month:'short'});
-    bars += `<rect x="${(gx+groupW/2-barW/2).toFixed(1)}" y="${(pad*0.6+chartH-barH).toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="var(--accent)"/>`;
+    bars += `<rect x="${(gx+groupW/2-barW/2).toFixed(1)}" y="${barTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="var(--accent)"/>`;
+    bars += `<text x="${(gx+groupW/2).toFixed(1)}" y="${(barTop-5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)" font-family="IBM Plex Mono, monospace">${fmtShort(amt)}</text>`;
     bars += `<text x="${(gx+groupW/2).toFixed(1)}" y="${h-6}" text-anchor="middle" font-size="10.5" fill="var(--text-faint)" font-family="IBM Plex Sans, sans-serif">${label}</text>`;
   });
-  svg.innerHTML = `${gridLines}<line x1="${pad}" y1="${pad*0.6+chartH}" x2="${w-pad}" y2="${pad*0.6+chartH}" stroke="var(--border)"/>${bars}`;
+  svg.innerHTML = `${gridLines}<line x1="${sidePad}" y1="${topPad+chartH}" x2="${w-sidePad}" y2="${topPad+chartH}" stroke="var(--border)"/>${bars}`;
 })();
 
 // ---------- Order status ----------
