@@ -1,0 +1,23 @@
+# December VAT advance payment ("acconto IVA"), due ~27 December each
+# year. Added 2026-09-10 to the cash flow forecast (both the Ultima Pulse
+# dashboard/exec Sheet forecast and the simpler cash-flow pipeline).
+#
+# By default this is auto-estimated via the "metodo storico" safe-harbor
+# calculation: 88% of the prior year's Oct-Dec VAT liability (output VAT
+# minus input VAT, from posted invoices/bills — see
+# exec_data._vat_acconto_reference_liability). That estimate does NOT
+# capture self-accounted import VAT actually paid in that historical
+# quarter (Odoo has no queryable record of past customs payments) or other
+# VAT return adjustments, so it likely UNDERSTATES the true reference
+# liability for a company with material import VAT like Ultima.
+#
+# Add an entry below to OVERRIDE the auto-estimate for a given year with a
+# definitive figure — e.g. the actual filed rigo VH4 once known, or your
+# commercialista's own calculation — which always takes precedence over
+# the auto-estimate. Leave this file with no entries (as below) to use the
+# auto-estimate as-is.
+#
+# year: the year the acconto is paid in (event lands on 27 Dec that year).
+# amount: the override amount, in EUR.
+
+[]
