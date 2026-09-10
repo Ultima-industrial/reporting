@@ -41,6 +41,13 @@ def _aging_bucket(due_date, as_of):
     return AGING_BUCKETS[4]
 
 
+def _is_confirmed_order(order):
+    """True for a confirmed sale order (state 'sale'/'done' — 'Ordine di
+    vendita' in Odoo's Italian UI). False for draft/sent quotations
+    ('Preventivo'), which aren't real orders yet."""
+    return order["state"] not in ("draft", "sent")
+
+
 def _order_status(order, as_of):
     state = order["state"]
     if state in ("draft", "sent"):
@@ -180,8 +187,11 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "partner_name": o["partner_id"][1] if o.get("partner_id") else "(unknown)",
         })
 
-    new_orders_today = mtd_count([o["order_date"] for o in orders], today)
-    new_orders_yesterday = mtd_count([o["order_date"] for o in orders], yesterday)
+    # New Orders counts only confirmed sale orders ("Ordine di vendita") —
+    # draft/sent quotations ("Preventivo") aren't new orders yet.
+    confirmed_order_dates = [o["order_date"] for o in orders if _is_confirmed_order(o)]
+    new_orders_today = mtd_count(confirmed_order_dates, today)
+    new_orders_yesterday = mtd_count(confirmed_order_dates, yesterday)
 
     # Quotes = sale orders not yet confirmed (state draft/sent — see
     # _order_status), by value rather than count, raised this month so far.
@@ -195,6 +205,21 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
 
     quotes_raised_mtd = quotes_value(today)
     quotes_raised_mtd_yesterday = quotes_value(yesterday)
+
+    # Sales Won = net (VAT-excluded) value of confirmed sale orders ("Ordine
+    # di vendita"), by order date, raised this month so far. This is order
+    # value, not invoiced revenue — a confirmed order isn't necessarily
+    # invoiced yet, so this can (and often will) differ from Revenue (MTD).
+    def sales_won_value(as_of):
+        if as_of < month_start:
+            return 0.0
+        return sum(
+            o["amount_untaxed"] for o in orders
+            if _is_confirmed_order(o) and month_start <= o["order_date"] <= as_of
+        )
+
+    sales_won_mtd = sales_won_value(today)
+    sales_won_mtd_yesterday = sales_won_value(yesterday)
 
     # Revenue is actual invoiced amounts (account.move), net of VAT — a sale
     # order being confirmed doesn't mean it's been invoiced/recognized yet,
@@ -335,6 +360,12 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         "quote raised yesterday but already confirmed into a sale order by today would drop out of both "
         "figures rather than staying counted in yesterday's."
     )
+    caveats.append(
+        "New Orders (MTD) and Sales Won (MTD) count only confirmed sale orders (state 'sale'/'done' — "
+        "'Ordine di vendita' in Odoo's Italian UI); draft/sent quotations ('Preventivo') are excluded. "
+        "Sales Won is order value (net of VAT), by order date — not invoiced revenue, so it can differ "
+        "from Revenue (MTD, invoiced)."
+    )
 
     receivables_aging = defaultdict(float)
     for i in invoices:
@@ -355,6 +386,8 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "revenue_ytd": revenue_ytd,
             "new_orders_today": new_orders_today,
             "new_orders_yesterday": new_orders_yesterday,
+            "sales_won_mtd": sales_won_mtd,
+            "sales_won_mtd_yesterday": sales_won_mtd_yesterday,
             "delayed_orders": delayed_today,
             "delayed_orders_count_yesterday": delayed_yesterday_count,
             "in_progress_orders": in_progress_today,
