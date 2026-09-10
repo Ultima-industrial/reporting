@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from . import exec_data
 from .categorize import Categorizer
 from .config import INITIAL_LOOKBACK_DAYS, STARTING_BALANCE_AMOUNT, STARTING_BALANCE_DATE, OdooConfig, SheetsConfig
 from .odoo_client import OdooClient
@@ -88,6 +89,38 @@ def run():
             "Receivable", invoice["name"], invoice["partner_id"][1] if invoice["partner_id"] else "",
             invoice.get("invoice_date_due") or "", amount,
         ])
+
+    # Import VAT self-accounting (UK-based suppliers, see
+    # config/import_vat_rules.yaml) and its quarterly recovery, plus
+    # estimated payments on confirmed purchase orders with no vendor bill
+    # yet (see exec_data.py — same logic that feeds the executive
+    # dashboard/Sheet forecast, reused here so both cash-flow views agree).
+    not_yet_arrived_pos = odoo.open_purchase_orders()
+    arriving_partner_ids = {po["partner_id"][0] for po in not_yet_arrived_pos if po.get("partner_id")}
+    country_by_partner = odoo.partner_countries(arriving_partner_ids)
+    import_vat_events = exec_data._import_vat_events(not_yet_arrived_pos, country_by_partner)
+
+    confirmed_pos = odoo.confirmed_purchase_orders()
+    term_ids = {po["payment_term_id"][0] for po in confirmed_pos if po.get("payment_term_id")}
+    term_lines_by_term_id = {}
+    for line in odoo.payment_term_lines(term_ids):
+        term_lines_by_term_id.setdefault(line["payment_id"][0], []).append(line)
+    po_payment_events, _po_payment_issues = exec_data._po_payment_events(confirmed_pos, term_lines_by_term_id)
+
+    vat_acconto_events = exec_data._vat_acconto_events(odoo, date.today())
+
+    for e in import_vat_events:
+        total_out += e["amount"]
+        upcoming_rows.append(["Import VAT (outflow)", e["po_name"], e["supplier"], e["due_date"].isoformat(), -e["amount"]])
+        total_in += e["amount"]
+        upcoming_rows.append(["Import VAT (recovery)", e["po_name"], e["supplier"], e["recovered_date"].isoformat(), e["amount"]])
+    for e in po_payment_events:
+        total_out += e["amount"]
+        upcoming_rows.append(["PO payment (est.)", e["po_name"], e["supplier"], e["due_date"].isoformat(), -e["amount"]])
+    for e in vat_acconto_events:
+        total_out += e["amount"]
+        upcoming_rows.append(["VAT acconto (est.)", "VAT acconto", "-", e["date"].isoformat(), -e["amount"]])
+
     upcoming_rows.sort(key=lambda r: r[3])
 
     sheets.write_upcoming(upcoming_rows)
