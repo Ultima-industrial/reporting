@@ -49,7 +49,16 @@ def _build_payload(data):
         },
         "revenue_trend": [[d.isoformat(), amt] for d, amt in s["revenue_trend"]],
         "expected_invoiced_by_month": [[d.isoformat(), amt] for d, amt in s["expected_invoiced_by_month"]],
-        "balance_trend": [[d.isoformat(), bal] for d, bal in f["balance_trend"]],
+        # Balance chart shows 30 actual days + 60 projected days in one series —
+        # forecast_trend[0] is today, already the last point of balance_trend,
+        # so skip it to avoid plotting today twice. balance_trend_split_index
+        # marks where "actual" ends and "projected" begins, for the chart to
+        # draw a visual boundary between the two.
+        "balance_trend": (
+            [[d.isoformat(), bal] for d, bal in f["balance_trend"]]
+            + [[d.isoformat(), bal] for d, bal in f["forecast_trend"][1:61]]
+        ),
+        "balance_trend_split_index": len(f["balance_trend"]) - 1,
         "forecast_trend": [[d.isoformat(), bal] for d, bal in f["forecast_trend"]],
         "status_breakdown": s["status_breakdown"],
         "top_customers": s["top_customers"],
