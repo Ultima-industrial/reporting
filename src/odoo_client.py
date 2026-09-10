@@ -159,13 +159,14 @@ class OdooClient:
         """Sale orders (quotations + confirmed), excluding cancelled, with the
         fields needed for revenue, fulfillment status, and delay detection.
         commitment_date is the promised delivery date; delivery_status is
-        Odoo's own fulfillment tracking (pending/partial/full)."""
+        Odoo's own fulfillment tracking (pending/partial/full). amount_untaxed
+        is the net (VAT-excluded) order value, used for Sales Won (MTD)."""
         domain = [["state", "!=", "cancel"]]
         if from_date:
             domain.append(["date_order", ">=", from_date])
         return self._search_read(
             "sale.order",
             domain,
-            ["name", "partner_id", "date_order", "amount_total", "state",
+            ["name", "partner_id", "date_order", "amount_total", "amount_untaxed", "state",
              "invoice_status", "delivery_status", "commitment_date"],
         )
