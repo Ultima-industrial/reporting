@@ -12,7 +12,8 @@
 # per-supplier name list (previously just "Alphabond") to a country-based
 # rule covering all UK-based suppliers, with an explicit exclude list for
 # suppliers based there on paper but out of scope in practice — e.g.
-# Bioscan is UK-registered but ships from France, so ordinary EU
+# Biodtex Technologies Ltd (formerly listed here as "Bioscan" — corrected
+# 2026-09) is UK-registered but ships from France, so ordinary EU
 # intra-community VAT rules apply instead of import VAT at customs.
 #
 # countries: ISO country codes matched against the purchase order vendor's
@@ -23,6 +24,6 @@
 # days_before_arrival: how many days before date_planned the payment is due.
 
 - countries: ["GB"]
-  exclude: ["Bioscan"]
+  exclude: ["Biodtex Technologies"]
   vat_percent: 22
   days_before_arrival: 5
