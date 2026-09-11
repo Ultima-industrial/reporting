@@ -216,7 +216,7 @@ def _end_of_month(d):
     return next_month - timedelta(days=next_month.day)
 
 
-_SUPPORTED_DELAY_TYPES = {"days_after", "days_end_of_month", "days_end_of_month_on_the"}
+_SUPPORTED_DELAY_TYPES = {"days_after", "days_after_end_of_month", "days_end_of_month_on_the"}
 
 
 def _term_due_dates(anchor_date, term_lines):
@@ -227,12 +227,18 @@ def _term_due_dates(anchor_date, term_lines):
     line) — callers should flag that as a data issue rather than silently
     mis-price it.
 
-    Note: this Odoo instance's actual delay_type values are 'days_after',
-    'days_end_of_month', and 'days_end_of_month_on_the' — confirmed via
-    the raw field dump surfaced by _po_payment_events' issue messages,
-    which is how a naming mismatch here gets caught rather than silently
-    mis-pricing something (an earlier version of this code guessed
-    'days_after_end_of_month(_on_the)', which turned out not to match).
+    Note: this Odoo instance's actual delay_type values, confirmed via the
+    raw field dump surfaced by _po_payment_events' issue messages (that's
+    how each of these got caught rather than silently mis-pricing
+    something), are NOT symmetrically named:
+      - 'days_after' — plain N-days-after
+      - 'days_after_end_of_month' — the plain end-of-month variant, KEEPS
+        "after" (e.g. Ultima's "30 gg fine mese")
+      - 'days_end_of_month_on_the' — the compound "on the Dth of next
+        month" variant, DROPS "after" (e.g. Ultima's "60 gg fine mese")
+    An earlier version of this code guessed both variants would drop
+    "after" consistently, which broke the plain one — don't assume the
+    naming pattern generalizes; trust the raw dump if a new one shows up.
 
     'days_end_of_month_on_the' is Odoo's "N giorni fine mese il D" schedule
     (e.g. Ultima's "60 gg fine mese", whose actual stored fields are
@@ -257,7 +263,7 @@ def _term_due_dates(anchor_date, term_lines):
             d = target_month_first.replace(day=target_day)
         else:
             d = anchor_date + timedelta(days=int(line["nb_days"]))
-            if line["delay_type"] == "days_end_of_month":
+            if line["delay_type"] == "days_after_end_of_month":
                 d = _end_of_month(d)
         results.append((d, float(line["value_amount"]) / 100))
     if results and abs(sum(f for _, f in results) - 1.0) > 0.01:
