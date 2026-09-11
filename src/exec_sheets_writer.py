@@ -227,7 +227,7 @@ class ExecSheetsWriter:
         self.add_column_chart(ws, "Expected Invoiced by Month (6 months)", 2, len(expected_invoiced_rows), domain_col=19, series_cols=[20], anchor_row=chart_row, anchor_col=19)
 
     def write_finance(self, open_items_rows, cash_trend_rows, aging_rows, forecast_rows, import_vat_rows, po_payment_rows):
-        ws = self._get_or_create_tab("Finance", cols=30, rows=max(80, len(open_items_rows) + len(forecast_rows) + 30))
+        ws = self._get_or_create_tab("Finance", cols=31, rows=max(80, len(open_items_rows) + len(forecast_rows) + 30))
         self._delete_charts(ws)
 
         header = ["Type", "Reference", "Counterparty", "Due Date", "Amount", "Aging Bucket"]
@@ -245,7 +245,7 @@ class ExecSheetsWriter:
         import_vat_header = ["PO", "Supplier", "Due Date", "Amount", "Recovers", "Rule"]
         self._write_block(ws, 1, 20, [import_vat_header] + import_vat_rows)
 
-        po_payment_header = ["PO", "Supplier", "Est. Due Date", "Amount"]
+        po_payment_header = ["PO", "Supplier", "Est. Due Date", "Amount", "Payment Term"]
         self._write_block(ws, 1, 27, [po_payment_header] + po_payment_rows)
 
         chart_row = max(len(open_items_rows), len(cash_trend_rows), len(aging_rows), len(forecast_rows)) + 4
