@@ -191,14 +191,32 @@ class OdooClient:
     def payment_term_lines(self, term_ids):
         """Lines of the given account.payment.term records, used to compute
         an estimated due-date split for a PO before any vendor bill exists.
-        payment_id is the line's parent term (the M2O back-reference)."""
+        payment_id is the line's parent term (the M2O back-reference).
+        days_next_month is only meaningful for delay_type
+        'days_after_end_of_month_on_the' (e.g. "60 gg fine mese") — see
+        exec_data._term_due_dates."""
         term_ids = sorted(set(term_ids))
         if not term_ids:
             return []
         return self._search_read(
             "account.payment.term.line",
             [["payment_id", "in", term_ids]],
-            ["payment_id", "value", "value_amount", "nb_days", "delay_type"],
+            ["payment_id", "value", "value_amount", "nb_days", "delay_type", "days_next_month"],
+        )
+
+    def bills_by_id(self, bill_ids):
+        """Posted vendor bills by id (amount_total) — used to net off what's
+        already been invoiced against a purchase order's total (e.g. a
+        partial 'fattura acconto') so only the true remaining balance gets
+        estimated, not the PO's full value. Restricted to state='posted'
+        since a draft/cancelled bill isn't a real invoiced amount yet."""
+        bill_ids = sorted(set(bill_ids))
+        if not bill_ids:
+            return []
+        return self._search_read(
+            "account.move",
+            [["id", "in", bill_ids], ["state", "=", "posted"]],
+            ["id", "amount_total"],
         )
 
     def partner_countries(self, partner_ids):
