@@ -76,9 +76,14 @@ def _daily_series(dated_amounts, start, end):
 
 
 def _add_month(d):
+    """One calendar month later, clamped to the target month's last valid
+    day if d's day-of-month doesn't exist there (e.g. 31 Jan -> 28/29 Feb)."""
     if d.month == 12:
-        return d.replace(year=d.year + 1, month=1)
-    return d.replace(month=d.month + 1)
+        y, m = d.year + 1, 1
+    else:
+        y, m = d.year, d.month + 1
+    last_day = _end_of_month(date(y, m, 1)).day
+    return date(y, m, min(d.day, last_day))
 
 
 def _expected_invoiced_by_month(odoo, today, months=6):
@@ -381,11 +386,15 @@ def _forecast_series(latest_balance, today, bills, invoices, import_vat_events,
     estimated payments on unbilled confirmed purchase orders (see
     _po_payment_events), and the December VAT acconto (see
     _vat_acconto_events) hit their dates. Still nothing beyond that is
-    modeled — no new sales, no recurring costs, no realistic payment-timing
-    behavior (customers who pay late, suppliers paid early). Anything
-    already overdue is assumed to land "today" rather than on its original
-    (past) due date, since projecting a date before today doesn't make
-    sense for a forward chart — still expected, just timing unknown.
+    modeled — no new sales, no recurring costs, no fully realistic
+    payment-timing behavior. An already-overdue bill/PO-payment/VAT event
+    is assumed to land "today" rather than on its original (past) date,
+    since projecting a date before today doesn't make sense for a forward
+    chart — still expected, just timing unknown. An overdue RECEIVABLE
+    (invoice sent to a client, already past due) instead lands 1 month
+    from today — a rolling assumption recomputed against "today" on every
+    run, not a fixed date — reflecting that a client already paying late
+    is a different collection-risk case than something merely due today.
 
     The horizon always runs the full max_days (6 months) ahead of today,
     not just out to the last known event — the balance simply stays flat
@@ -395,9 +404,18 @@ def _forecast_series(latest_balance, today, bills, invoices, import_vat_events,
     for b in bills:
         if b["due_date"]:
             events[max(b["due_date"], today)] -= float(b["amount_residual"])
+    # Overdue receivables (invoices sent to clients, past their due date) are
+    # assumed to land 1 month from today — not immediately today like
+    # everything else that's overdue/due — since a client already paying
+    # late is a materially different collection-risk case than a bill just
+    # due today. This is a rolling assumption, not a fixed date: it's
+    # recomputed against "today" on every run, so it shifts forward a day
+    # each time this report runs rather than converging on one calendar date.
     for i in invoices:
-        if i["due_date"]:
-            events[max(i["due_date"], today)] += float(i["amount_residual"])
+        if not i["due_date"]:
+            continue
+        landing = i["due_date"] if i["due_date"] >= today else _add_month(today)
+        events[landing] += float(i["amount_residual"])
     for v in import_vat_events:
         events[max(v["due_date"], today)] -= v["amount"]
         events[max(v["recovered_date"], today)] += v["amount"]
@@ -658,8 +676,10 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         "quarterly recovery, estimated payment dates for confirmed purchase orders with no vendor bill yet "
         "(from their payment term + expected arrival date), and the configured December VAT acconto "
         "(config/vat_acconto.yaml) — against the current balance. No new sales, recurring costs, or fully "
-        "realistic payment-timing behavior are modeled yet. Anything already overdue/due is assumed to land "
-        "today rather than on its original due date."
+        "realistic payment-timing behavior are modeled yet. An already overdue/due bill, PO payment, or VAT "
+        "event is assumed to land today rather than on its original date. An overdue RECEIVABLE (invoice "
+        "sent to a client, already past due) instead lands 1 month from today — a rolling assumption "
+        "recomputed daily, not a fixed date."
     )
     caveats.append(
         "Import VAT self-accounted at customs (suppliers based in a listed country, see "
