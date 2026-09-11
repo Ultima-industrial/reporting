@@ -196,7 +196,7 @@ def _end_of_month(d):
     return next_month - timedelta(days=next_month.day)
 
 
-_SUPPORTED_DELAY_TYPES = {"days_after", "days_after_end_of_month", "days_after_end_of_month_on_the"}
+_SUPPORTED_DELAY_TYPES = {"days_after", "days_end_of_month", "days_end_of_month_on_the"}
 
 
 def _term_due_dates(anchor_date, term_lines):
@@ -207,30 +207,37 @@ def _term_due_dates(anchor_date, term_lines):
     line) — callers should flag that as a data issue rather than silently
     mis-price it.
 
-    'days_after_end_of_month_on_the' is Odoo's "N giorni fine mese il D"
-    schedule (e.g. Ultima's "60 gg fine mese", whose actual stored fields
-    are nb_days=30 + days_next_month=31, NOT a literal 60/31 — the
-    effective ~60-day/end-of-month behavior comes out of this exact
-    sequence): end of the anchor's own month, plus nb_days, rounded UP to
-    end of THAT resulting month, then moved to day `days_next_month`
-    (capped at that month's real length) of the FOLLOWING month. Verified
-    against Odoo's own preview UI for two different anchor dates (10 Sept
-    -> 30 Nov, 1 Jul -> 30 Sept) before shipping this — every date within
-    the same anchor month collapses to the same due date, which is exactly
-    the point of a "fine mese" term (one shared payment date per month of
-    invoices, not one per invoice)."""
+    Note: this Odoo instance's actual delay_type values are 'days_after',
+    'days_end_of_month', and 'days_end_of_month_on_the' — confirmed via
+    the raw field dump surfaced by _po_payment_events' issue messages,
+    which is how a naming mismatch here gets caught rather than silently
+    mis-pricing something (an earlier version of this code guessed
+    'days_after_end_of_month(_on_the)', which turned out not to match).
+
+    'days_end_of_month_on_the' is Odoo's "N giorni fine mese il D" schedule
+    (e.g. Ultima's "60 gg fine mese", whose actual stored fields are
+    nb_days=60 + days_next_month=31, NOT necessarily a literal 60/31 for
+    every such term — the effective ~60-day/end-of-month behavior comes
+    out of this exact sequence): end of the anchor's own month, plus
+    nb_days, rounded UP to end of THAT resulting month, then moved to day
+    `days_next_month` (capped at that month's real length) of the
+    FOLLOWING month. Verified against Odoo's own preview UI for two
+    different anchor dates (10 Sept -> 30 Nov, 1 Jul -> 30 Sept) before
+    shipping this — every date within the same anchor month collapses to
+    the same due date, which is exactly the point of a "fine mese" term
+    (one shared payment date per month of invoices, not one per invoice)."""
     results = []
     for line in term_lines:
         if line.get("value") != "percent" or line.get("delay_type") not in _SUPPORTED_DELAY_TYPES:
             return None
-        if line["delay_type"] == "days_after_end_of_month_on_the":
+        if line["delay_type"] == "days_end_of_month_on_the":
             d = _end_of_month(anchor_date) + timedelta(days=int(line["nb_days"]))
             target_month_first = _add_month(d.replace(day=1))
             target_day = min(int(line["days_next_month"]), _end_of_month(target_month_first).day)
             d = target_month_first.replace(day=target_day)
         else:
             d = anchor_date + timedelta(days=int(line["nb_days"]))
-            if line["delay_type"] == "days_after_end_of_month":
+            if line["delay_type"] == "days_end_of_month":
                 d = _end_of_month(d)
         results.append((d, float(line["value_amount"]) / 100))
     if results and abs(sum(f for _, f in results) - 1.0) > 0.01:
