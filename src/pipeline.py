@@ -105,7 +105,8 @@ def run():
     term_lines_by_term_id = {}
     for line in odoo.payment_term_lines(term_ids):
         term_lines_by_term_id.setdefault(line["payment_id"][0], []).append(line)
-    po_payment_events, _po_payment_issues = exec_data._po_payment_events(confirmed_pos, term_lines_by_term_id)
+    bill_totals_by_id = exec_data._bill_totals_for_pos(odoo, confirmed_pos)
+    po_payment_events, _po_payment_issues = exec_data._po_payment_events(confirmed_pos, term_lines_by_term_id, bill_totals_by_id)
 
     vat_acconto_events = exec_data._vat_acconto_events(odoo, date.today())
 
