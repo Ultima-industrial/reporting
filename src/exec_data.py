@@ -143,24 +143,44 @@ def _vat_settlement_date(paid_date):
     return date(y + 1, 3, 16)
 
 
-def _import_vat_events(purchase_orders, country_by_partner):
-    """Reads config/import_vat_rules.yaml and computes one forecast outflow
-    (plus a paired recovery inflow — see _vat_settlement_date) per matching
-    purchase order: suppliers based in a listed country (e.g. the UK, post-
-    Brexit) don't charge Italian VAT on their own PO/bill — Ultima
-    self-accounts the import VAT straight to customs instead, due some
-    days before the order's expected arrival (date_planned), and recovers
-    it as input VAT at the next quarterly settlement. This is a real cash
-    outflow (and later inflow) with no corresponding vendor bill in Odoo,
-    so it can't come from open_vendor_bills() and has to be modeled
-    separately. Matching is by the vendor's country, with an explicit
-    per-rule exclude list for suppliers based there on paper but outside
-    the rule in practice (e.g. shipping from elsewhere in the EU)."""
+def _load_import_country_rules():
+    """Reads config/import_vat_rules.yaml — the "is this an import PO"
+    signal (country + per-rule supplier exclusions) shared by
+    _import_vat_events and _matches_import_rule (used to scope other
+    import-specific business rules, e.g. the "paid before dispatch"
+    adjustment for Immediate Payment terms on import POs)."""
     path = CONFIG_DIR / "import_vat_rules.yaml"
     if not path.exists():
         return []
     with open(path, "r", encoding="utf-8") as f:
-        rules = yaml.safe_load(f) or []
+        return yaml.safe_load(f) or []
+
+
+def _matches_import_rule(country, partner_name, rules):
+    """True if this supplier matches one of the country rules (and isn't
+    on that rule's exclude list) — the same "is this an import supplier"
+    signal used for import VAT self-accounting, reused elsewhere so a
+    supplier excluded there (e.g. Bioscan) is treated consistently."""
+    for rule in rules:
+        if country not in rule.get("countries", []):
+            continue
+        if any(ex.lower() in partner_name.lower() for ex in rule.get("exclude", [])):
+            continue
+        return True
+    return False
+
+
+def _import_vat_events(purchase_orders, country_by_partner, rules):
+    """Computes one forecast outflow (plus a paired recovery inflow — see
+    _vat_settlement_date) per matching purchase order: suppliers based in
+    a listed country (e.g. the UK, post-Brexit) don't charge Italian VAT
+    on their own PO/bill — Ultima self-accounts the import VAT straight to
+    customs instead, due some days before the order's expected arrival
+    (date_planned), and recovers it as input VAT at the next quarterly
+    settlement. This is a real cash outflow (and later inflow) with no
+    corresponding vendor bill in Odoo, so it can't come from
+    open_vendor_bills() and has to be modeled separately. Matching is via
+    _matches_import_rule (config/import_vat_rules.yaml)."""
     if not rules:
         return []
 
@@ -255,7 +275,20 @@ def _bill_totals_for_pos(odoo, purchase_orders):
     return {b["id"]: float(b["amount_total"]) for b in odoo.bills_by_id(bill_ids)}
 
 
-def _po_payment_events(purchase_orders, term_lines_by_term_id, bill_totals_by_id):
+IMMEDIATE_PAYMENT_IMPORT_LEAD_DAYS = 7
+
+
+def _is_immediate_term(lines):
+    """True if every line is "due immediately" (0 days, plain days_after) —
+    the shape of Odoo's "Immediate Payment" / "Pagamento Immediato" term."""
+    return bool(lines) and all(
+        l.get("delay_type") == "days_after" and int(l.get("nb_days") or 0) == 0
+        for l in lines
+    )
+
+
+def _po_payment_events(purchase_orders, term_lines_by_term_id, bill_totals_by_id,
+                        country_by_partner, import_rules):
     """Estimated future payments to suppliers for confirmed purchase orders,
     for whatever balance hasn't been invoiced yet. A PO already fully
     invoiced (its linked bills' amount_total sums to ~its own amount_total)
@@ -268,14 +301,22 @@ def _po_payment_events(purchase_orders, term_lines_by_term_id, bill_totals_by_id
     still-unbilled remainder needs an estimate, and using the full PO
     amount here would double-count the acconto portion.
 
-    Anchor date is date_planned (expected arrival) — an approximation,
-    since a supplier's actual invoice date may fall earlier or later;
-    worth sanity-checking computed dates against a few real POs after this
-    ships. The same caveat applies doubly to the remaining-balance case:
-    the split-by-payment-term-line proportions are applied to the smaller
-    remaining amount as a fresh approximation, which may not exactly match
-    a real "saldo" invoice's actual terms if those differ from the
-    acconto's.
+    Anchor date is normally date_planned (expected arrival) — an
+    approximation, since a supplier's actual invoice date may fall earlier
+    or later; worth sanity-checking computed dates against a few real POs
+    after this ships. The same caveat applies doubly to the
+    remaining-balance case: the split-by-payment-term-line proportions are
+    applied to the smaller remaining amount as a fresh approximation,
+    which may not exactly match a real "saldo" invoice's actual terms if
+    those differ from the acconto's.
+
+    Exception: an import PO (see _matches_import_rule) on an Immediate
+    Payment term anchors IMMEDIATE_PAYMENT_IMPORT_LEAD_DAYS (7) earlier
+    than expected arrival instead — these suppliers require payment before
+    dispatch, not on/after arrival, so anchoring on date_planned itself
+    (or later) would be backwards. Scoped to import POs only per Annalisa
+    Casavecchia 2026-09 — a domestic "Immediate Payment" PO still anchors
+    on date_planned itself.
 
     Every confirmed PO is expected to carry a payment term ("termini di
     pagamento") — this is meant to become standard data-entry practice, so
@@ -290,6 +331,7 @@ def _po_payment_events(purchase_orders, term_lines_by_term_id, bill_totals_by_id
         remaining = float(po["amount_total"]) - invoiced_total
         if remaining <= 0.01:
             continue  # fully invoiced (within rounding) — nothing left to estimate
+        partner_id = po["partner_id"][0] if po.get("partner_id") else None
         supplier = po["partner_id"][1] if po.get("partner_id") else "(unknown)"
         term = po.get("payment_term_id")
         if not term:
@@ -300,7 +342,12 @@ def _po_payment_events(purchase_orders, term_lines_by_term_id, bill_totals_by_id
             issues.append(f"{po['name']} ({supplier}) has a payment term but no expected arrival date set")
             continue
         lines = term_lines_by_term_id.get(term[0])
-        splits = _term_due_dates(planned, lines) if lines else None
+        anchor = planned
+        if lines and _is_immediate_term(lines):
+            country = country_by_partner.get(partner_id)
+            if _matches_import_rule(country, supplier, import_rules):
+                anchor = planned - timedelta(days=IMMEDIATE_PAYMENT_IMPORT_LEAD_DAYS)
+        splits = _term_due_dates(anchor, lines) if lines else None
         if not splits:
             if not lines:
                 issues.append(f"{po['name']}'s payment term ('{term[1]}') has no lines returned by Odoo (id {term[0]})")
@@ -670,19 +717,27 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     overdue_payables_today = [b for b in bills if b["due_date"] and b["due_date"] < today]
 
     # --- Finance: forward-looking events not yet reflected in a bill/invoice ---
+    import_rules = _load_import_country_rules()
     not_yet_arrived_pos = odoo.open_purchase_orders()
-    arriving_partner_ids = {po["partner_id"][0] for po in not_yet_arrived_pos if po.get("partner_id")}
-    country_by_partner = odoo.partner_countries(arriving_partner_ids)
-    import_vat_events = _import_vat_events(not_yet_arrived_pos, country_by_partner)
-
     confirmed_pos = odoo.confirmed_purchase_orders()
+    # One combined country lookup covers both _import_vat_events (VAT
+    # self-accounting, not-yet-arrived POs only) and _po_payment_events
+    # (the Immediate-Payment-import "-7 days" rule, all confirmed POs).
+    all_po_partner_ids = {
+        po["partner_id"][0] for po in (not_yet_arrived_pos + confirmed_pos) if po.get("partner_id")
+    }
+    country_by_partner = odoo.partner_countries(all_po_partner_ids)
+    import_vat_events = _import_vat_events(not_yet_arrived_pos, country_by_partner, import_rules)
+
     term_ids = {po["payment_term_id"][0] for po in confirmed_pos if po.get("payment_term_id")}
     term_lines_raw = odoo.payment_term_lines(term_ids)
     term_lines_by_term_id = defaultdict(list)
     for line in term_lines_raw:
         term_lines_by_term_id[line["payment_id"][0]].append(line)
     bill_totals_by_id = _bill_totals_for_pos(odoo, confirmed_pos)
-    po_payment_events, po_payment_issues = _po_payment_events(confirmed_pos, term_lines_by_term_id, bill_totals_by_id)
+    po_payment_events, po_payment_issues = _po_payment_events(
+        confirmed_pos, term_lines_by_term_id, bill_totals_by_id, country_by_partner, import_rules
+    )
 
     vat_acconto_events = _vat_acconto_events(odoo, today)
 
@@ -720,6 +775,13 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         "order — if it's been partially invoiced (e.g. a 'fattura acconto' already received), that invoice's "
         "own due date already shows via Open Vendor Bills, and only the still-unbilled remainder is "
         "estimated here, split across the same payment-term proportions applied to that smaller balance."
+    )
+    caveats.append(
+        f"An import PO (supplier based in a listed country, see config/import_vat_rules.yaml) on an "
+        f"Immediate Payment term is anchored {IMMEDIATE_PAYMENT_IMPORT_LEAD_DAYS} days before its expected "
+        f"arrival rather than on the arrival date itself, since these suppliers require payment before "
+        f"dispatch, not on/after arrival. A domestic Immediate Payment PO still anchors on the expected "
+        f"arrival date."
     )
     if po_payment_issues:
         caveats.append(
