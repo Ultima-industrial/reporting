@@ -185,7 +185,13 @@ def _import_vat_events(purchase_orders, country_by_partner):
     return events
 
 
-_SUPPORTED_DELAY_TYPES = {"days_after", "days_after_end_of_month"}
+def _end_of_month(d):
+    """Last calendar day of d's month."""
+    next_month = d.replace(day=28) + timedelta(days=4)
+    return next_month - timedelta(days=next_month.day)
+
+
+_SUPPORTED_DELAY_TYPES = {"days_after", "days_after_end_of_month", "days_after_end_of_month_on_the"}
 
 
 def _term_due_dates(anchor_date, term_lines):
@@ -193,43 +199,85 @@ def _term_due_dates(anchor_date, term_lines):
     (due_date, fraction) tuples — fraction is a 0-1 share of the PO's total.
     Returns None (not a supported schedule) if any line uses a delay_type
     or value type this hasn't been built to handle yet (e.g. a fixed-amount
-    line, or a "N days after end of month, on the Xth" schedule) — callers
-    should flag that as a data issue rather than silently mis-price it."""
+    line) — callers should flag that as a data issue rather than silently
+    mis-price it.
+
+    'days_after_end_of_month_on_the' is Odoo's "N giorni fine mese il D"
+    schedule (e.g. Ultima's "60 gg fine mese", whose actual stored fields
+    are nb_days=30 + days_next_month=31, NOT a literal 60/31 — the
+    effective ~60-day/end-of-month behavior comes out of this exact
+    sequence): end of the anchor's own month, plus nb_days, rounded UP to
+    end of THAT resulting month, then moved to day `days_next_month`
+    (capped at that month's real length) of the FOLLOWING month. Verified
+    against Odoo's own preview UI for two different anchor dates (10 Sept
+    -> 30 Nov, 1 Jul -> 30 Sept) before shipping this — every date within
+    the same anchor month collapses to the same due date, which is exactly
+    the point of a "fine mese" term (one shared payment date per month of
+    invoices, not one per invoice)."""
     results = []
     for line in term_lines:
         if line.get("value") != "percent" or line.get("delay_type") not in _SUPPORTED_DELAY_TYPES:
             return None
-        d = anchor_date + timedelta(days=int(line["nb_days"]))
-        if line["delay_type"] == "days_after_end_of_month":
-            next_month = d.replace(day=28) + timedelta(days=4)
-            d = next_month - timedelta(days=next_month.day)
+        if line["delay_type"] == "days_after_end_of_month_on_the":
+            d = _end_of_month(anchor_date) + timedelta(days=int(line["nb_days"]))
+            target_month_first = _add_month(d.replace(day=1))
+            target_day = min(int(line["days_next_month"]), _end_of_month(target_month_first).day)
+            d = target_month_first.replace(day=target_day)
+        else:
+            d = anchor_date + timedelta(days=int(line["nb_days"]))
+            if line["delay_type"] == "days_after_end_of_month":
+                d = _end_of_month(d)
         results.append((d, float(line["value_amount"]) / 100))
     if results and abs(sum(f for _, f in results) - 1.0) > 0.01:
         return None  # lines don't add up to 100% — schema mismatch, don't guess
     return results or None
 
 
-def _po_payment_events(purchase_orders, term_lines_by_term_id):
-    """Estimated future payments to suppliers for confirmed purchase orders
-    that have no vendor bill yet (invoice_ids empty) — a bill, open or
-    paid, already accounts for that PO's cash impact elsewhere (via
-    open_vendor_bills, or it's settled), so estimating on top of an
-    existing bill would double-count. Anchor date is date_planned (expected
-    arrival) — an approximation, since a supplier's actual invoice date may
-    fall earlier or later; worth sanity-checking computed dates against a
-    few real POs after this ships.
+def _bill_totals_for_pos(odoo, purchase_orders):
+    """Maps account.move id -> amount_total for every bill referenced by
+    the given purchase orders' invoice_ids (posted only — see
+    OdooClient.bills_by_id) — used by _po_payment_events to net off what's
+    already been invoiced (e.g. a partial "fattura acconto") from a PO's
+    total before estimating what's still owed."""
+    bill_ids = {bid for po in purchase_orders for bid in (po.get("invoice_ids") or [])}
+    return {b["id"]: float(b["amount_total"]) for b in odoo.bills_by_id(bill_ids)}
+
+
+def _po_payment_events(purchase_orders, term_lines_by_term_id, bill_totals_by_id):
+    """Estimated future payments to suppliers for confirmed purchase orders,
+    for whatever balance hasn't been invoiced yet. A PO already fully
+    invoiced (its linked bills' amount_total sums to ~its own amount_total)
+    is skipped — that's fully accounted for elsewhere (via
+    open_vendor_bills, or already settled). A PO with NO bills yet is
+    estimated on its full amount_total, same as before. A PARTIALLY
+    invoiced PO (e.g. an acconto invoice already received) is estimated on
+    just the remaining un-invoiced balance — the acconto invoice itself
+    already has its own real due date via open_vendor_bills, so only the
+    still-unbilled remainder needs an estimate, and using the full PO
+    amount here would double-count the acconto portion.
+
+    Anchor date is date_planned (expected arrival) — an approximation,
+    since a supplier's actual invoice date may fall earlier or later;
+    worth sanity-checking computed dates against a few real POs after this
+    ships. The same caveat applies doubly to the remaining-balance case:
+    the split-by-payment-term-line proportions are applied to the smaller
+    remaining amount as a fresh approximation, which may not exactly match
+    a real "saldo" invoice's actual terms if those differ from the
+    acconto's.
 
     Every confirmed PO is expected to carry a payment term ("termini di
     pagamento") — this is meant to become standard data-entry practice, so
-    a PO missing one (or missing date_planned, or using a payment-term
-    schedule this function doesn't support) is excluded and flagged via
-    the returned issues list rather than silently guessed at or skipped
-    quietly."""
+    a PO (or its remaining balance) missing one (or missing date_planned,
+    or using a payment-term schedule this function doesn't support) is
+    excluded and flagged via the returned issues list rather than silently
+    guessed at or skipped quietly."""
     events = []
     issues = []
     for po in purchase_orders:
-        if po.get("invoice_ids"):
-            continue
+        invoiced_total = sum(bill_totals_by_id.get(bid, 0.0) for bid in (po.get("invoice_ids") or []))
+        remaining = float(po["amount_total"]) - invoiced_total
+        if remaining <= 0.01:
+            continue  # fully invoiced (within rounding) — nothing left to estimate
         supplier = po["partner_id"][1] if po.get("partner_id") else "(unknown)"
         term = po.get("payment_term_id")
         if not term:
@@ -249,7 +297,8 @@ def _po_payment_events(purchase_orders, term_lines_by_term_id):
                 "po_name": po["name"],
                 "supplier": supplier,
                 "due_date": due,
-                "amount": float(po["amount_total"]) * fraction,
+                "amount": remaining * fraction,
+                "term_name": term[1],
             })
     return events, issues
 
@@ -595,7 +644,8 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     term_lines_by_term_id = defaultdict(list)
     for line in term_lines_raw:
         term_lines_by_term_id[line["payment_id"][0]].append(line)
-    po_payment_events, po_payment_issues = _po_payment_events(confirmed_pos, term_lines_by_term_id)
+    bill_totals_by_id = _bill_totals_for_pos(odoo, confirmed_pos)
+    po_payment_events, po_payment_issues = _po_payment_events(confirmed_pos, term_lines_by_term_id, bill_totals_by_id)
 
     vat_acconto_events = _vat_acconto_events(odoo, today)
 
@@ -626,11 +676,17 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "return adjustments, so it likely UNDERSTATES the true reference liability — set the actual filed "
             "rigo VH4 figure in config/vat_acconto.yaml once known, which always takes precedence."
         )
+    caveats.append(
+        "Confirmed orders awaiting invoice estimates only the REMAINING un-invoiced balance of a purchase "
+        "order — if it's been partially invoiced (e.g. a 'fattura acconto' already received), that invoice's "
+        "own due date already shows via Open Vendor Bills, and only the still-unbilled remainder is "
+        "estimated here, split across the same payment-term proportions applied to that smaller balance."
+    )
     if po_payment_issues:
         caveats.append(
-            "Confirmed purchase orders missing what's needed to estimate their payment date (no payment "
-            "term set, no expected arrival date, or a payment-term schedule not yet supported here) are "
-            "excluded from the forecast rather than guessed at: " + "; ".join(po_payment_issues)
+            "Confirmed purchase orders missing what's needed to estimate their remaining payment date (no "
+            "payment term set, no expected arrival date, or a payment-term schedule not yet supported here) "
+            "are excluded from the forecast rather than guessed at: " + "; ".join(po_payment_issues)
         )
     caveats.append(
         "Quotes Raised 'yesterday' uses each order's CURRENT state, not its state as of yesterday — a "
