@@ -95,18 +95,23 @@ def run():
     # estimated payments on confirmed purchase orders with no vendor bill
     # yet (see exec_data.py — same logic that feeds the executive
     # dashboard/Sheet forecast, reused here so both cash-flow views agree).
+    import_rules = exec_data._load_import_country_rules()
     not_yet_arrived_pos = odoo.open_purchase_orders()
-    arriving_partner_ids = {po["partner_id"][0] for po in not_yet_arrived_pos if po.get("partner_id")}
-    country_by_partner = odoo.partner_countries(arriving_partner_ids)
-    import_vat_events = exec_data._import_vat_events(not_yet_arrived_pos, country_by_partner)
-
     confirmed_pos = odoo.confirmed_purchase_orders()
+    all_po_partner_ids = {
+        po["partner_id"][0] for po in (not_yet_arrived_pos + confirmed_pos) if po.get("partner_id")
+    }
+    country_by_partner = odoo.partner_countries(all_po_partner_ids)
+    import_vat_events = exec_data._import_vat_events(not_yet_arrived_pos, country_by_partner, import_rules)
+
     term_ids = {po["payment_term_id"][0] for po in confirmed_pos if po.get("payment_term_id")}
     term_lines_by_term_id = {}
     for line in odoo.payment_term_lines(term_ids):
         term_lines_by_term_id.setdefault(line["payment_id"][0], []).append(line)
     bill_totals_by_id = exec_data._bill_totals_for_pos(odoo, confirmed_pos)
-    po_payment_events, _po_payment_issues = exec_data._po_payment_events(confirmed_pos, term_lines_by_term_id, bill_totals_by_id)
+    po_payment_events, _po_payment_issues = exec_data._po_payment_events(
+        confirmed_pos, term_lines_by_term_id, bill_totals_by_id, country_by_partner, import_rules
+    )
 
     vat_acconto_events = exec_data._vat_acconto_events(odoo, date.today())
 
