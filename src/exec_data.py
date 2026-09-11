@@ -160,7 +160,8 @@ def _matches_import_rule(country, partner_name, rules):
     """True if this supplier matches one of the country rules (and isn't
     on that rule's exclude list) — the same "is this an import supplier"
     signal used for import VAT self-accounting, reused elsewhere so a
-    supplier excluded there (e.g. Bioscan) is treated consistently."""
+    supplier excluded there (e.g. Biodtex Technologies Ltd) is treated
+    consistently."""
     for rule in rules:
         if country not in rule.get("countries", []):
             continue
