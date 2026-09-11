@@ -151,7 +151,7 @@ def _import_vat_rows(data):
 
 def _po_payment_rows(data):
     return [
-        [e["po_name"], e["supplier"], e["due_date"].isoformat(), -e["amount"]]
+        [e["po_name"], e["supplier"], e["due_date"].isoformat(), -e["amount"], e["term_name"]]
         for e in data["finance"]["po_payment_events"]
     ]
 
