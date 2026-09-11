@@ -295,7 +295,19 @@ def _po_payment_events(purchase_orders, term_lines_by_term_id, bill_totals_by_id
         lines = term_lines_by_term_id.get(term[0])
         splits = _term_due_dates(planned, lines) if lines else None
         if not splits:
-            issues.append(f"{po['name']}'s payment term ('{term[1]}') uses a schedule not yet supported here")
+            if not lines:
+                issues.append(f"{po['name']}'s payment term ('{term[1]}') has no lines returned by Odoo (id {term[0]})")
+            else:
+                raw = "; ".join(
+                    f"value={l.get('value')!r} delay_type={l.get('delay_type')!r} "
+                    f"nb_days={l.get('nb_days')!r} days_next_month={l.get('days_next_month')!r} "
+                    f"value_amount={l.get('value_amount')!r}"
+                    for l in lines
+                )
+                issues.append(
+                    f"{po['name']}'s payment term ('{term[1]}') uses a schedule not yet supported here — "
+                    f"raw line data: {raw}"
+                )
             continue
         for due, fraction in splits:
             events.append({
