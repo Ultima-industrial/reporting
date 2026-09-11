@@ -83,7 +83,7 @@ def _build_payload(data):
         ],
         "po_payment_events": [
             {"po_name": e["po_name"], "supplier": e["supplier"],
-             "due_date": e["due_date"].isoformat(), "amount": e["amount"]}
+             "due_date": e["due_date"].isoformat(), "amount": e["amount"], "term_name": e["term_name"]}
             for e in f["po_payment_events"]
         ],
         "po_payment_issues": f["po_payment_issues"],
