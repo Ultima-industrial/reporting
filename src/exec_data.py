@@ -92,10 +92,13 @@ def _expected_invoiced_by_month(odoo, today, months=6):
     order's expected invoice date is its promised delivery date
     (commitment_date, "Data Consegna") rather than its order date. Only
     confirmed orders count (drafts/quotations aren't real deliveries yet).
-    Uses each order line's untaxed_amount_to_invoice — Odoo's own computed
-    "remaining to invoice" value (net of VAT) — rather than the order's
-    full amount_untaxed, so anything already invoiced, in full or in part,
-    is excluded rather than double-counted against actual Revenue. Grouped
+    Each line contributes its full untaxed value (price_subtotal) minus the
+    share already invoiced (qty_invoiced / product_uom_qty), so anything
+    already invoiced, in full or in part, is excluded rather than
+    double-counted against actual Revenue. This deliberately does not use
+    Odoo's untaxed_amount_to_invoice, which is 0 for undelivered orders on
+    products invoiced by delivered quantity (invoice status "Nulla da
+    fatturare") — exactly the orders this forecast should anticipate. Grouped
     into `months` full calendar-month buckets starting with the current
     month."""
     month_starts = []
@@ -118,7 +121,11 @@ def _expected_invoiced_by_month(odoo, today, months=6):
         d = commitment_by_order.get(order_id)
         if not d:
             continue
-        totals[d.replace(day=1)] += float(l["untaxed_amount_to_invoice"])
+        ordered = float(l["product_uom_qty"] or 0)
+        if ordered <= 0:
+            continue
+        remaining_share = max(ordered - float(l["qty_invoiced"] or 0), 0.0) / ordered
+        totals[d.replace(day=1)] += float(l["price_subtotal"]) * remaining_share
     return [(ms, totals.get(ms, 0.0)) for ms in month_starts]
 
 
@@ -824,8 +831,9 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
         "Expected Invoiced by Month assumes deliveries land on their promised date (commitment_date, "
         "'Data Consegna') and are invoiced immediately ('fatture immediate') — a delayed delivery shows in "
         "the month it was originally promised, not when it actually ships, and this doesn't model deliveries "
-        "on orders not yet confirmed. Uses each line's remaining amount to invoice (net of VAT), not the "
-        "order's full value, so a partially-invoiced order only contributes what's left to invoice."
+        "on orders not yet confirmed. Uses each line's full value (net of VAT) minus what's already been "
+        "invoiced, so undelivered orders count in full and a partially-invoiced order only contributes "
+        "what's left to invoice."
     )
 
     receivables_aging = defaultdict(float)
