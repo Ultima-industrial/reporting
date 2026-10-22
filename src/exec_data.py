@@ -648,10 +648,14 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     # so an older order stuck past its date still surfaces. Such an order falls
     # outside Expected Invoiced Revenue (which only looks forward from the 1st
     # of this month), so it would otherwise silently vanish from both views.
+    # A fully invoiced order is excluded even if Odoo never marked its delivery
+    # as complete — nothing is left to deliver or bill, so there's nothing to chase.
     past_delivery_orders = sorted(
         (
             o for o in orders_all
-            if _is_confirmed_order(o) and _order_status(o, today) == "Delayed"
+            if _is_confirmed_order(o)
+            and _order_status(o, today) == "Delayed"
+            and o.get("invoice_status") != "invoiced"
         ),
         key=lambda o: o["commitment_date_parsed"],
     )
