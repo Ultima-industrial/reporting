@@ -636,6 +636,19 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     for label, _ in status_today:
         status_breakdown[label] += 1
 
+    # Confirmed, not-yet-fully-delivered orders whose Data Consegna has already
+    # passed — across all of orders_all, not just the recent `orders` window,
+    # so an older order stuck past its date still surfaces. Such an order falls
+    # outside Expected Invoiced Revenue (which only looks forward from the 1st
+    # of this month), so it would otherwise silently vanish from both views.
+    past_delivery_orders = sorted(
+        (
+            o for o in orders_all
+            if _is_confirmed_order(o) and _order_status(o, today) == "Delayed"
+        ),
+        key=lambda o: o["commitment_date_parsed"],
+    )
+
     # Same basis as Revenue (MTD invoiced) — not order value, and not a
     # trailing 30-day window — so this reconciles with the Revenue figure
     # instead of implying more revenue than was actually invoiced.
@@ -841,6 +854,7 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "delayed_orders_count_yesterday": delayed_yesterday_count,
             "in_progress_orders": in_progress_today,
             "status_breakdown": dict(status_breakdown),
+            "past_delivery_orders": past_delivery_orders,
             "revenue_trend": revenue_trend,
             "top_customers": top_customers,
             "gp_percent": gp_percent,
