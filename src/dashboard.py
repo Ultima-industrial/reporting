@@ -61,6 +61,11 @@ def _build_payload(data):
         "balance_trend_split_index": len(f["balance_trend"]) - 1,
         "forecast_trend": [[d.isoformat(), bal] for d, bal in f["forecast_trend"]],
         "status_breakdown": s["status_breakdown"],
+        "past_delivery_orders": [
+            {"name": o["name"], "customer": o["partner_name"],
+             "delivery_date": o["commitment_date_parsed"].isoformat(), "amount": float(o["amount_untaxed"])}
+            for o in s["past_delivery_orders"]
+        ],
         "top_customers": s["top_customers"],
         "receivables_aging": [f["receivables_aging"].get(b, 0.0) for b in exec_data.AGING_BUCKETS],
         "payables_aging": [f["payables_aging"].get(b, 0.0) for b in exec_data.AGING_BUCKETS],
