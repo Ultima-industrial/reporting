@@ -257,11 +257,13 @@ class OdooClient:
         a promised delivery date (commitment_date, "Data Consegna" in the
         Italian UI) in [start_date, end_date] — used to forecast expected
         invoiced revenue by month, since Ultima invoices immediately on
-        delivery ("fatture immediate"). untaxed_amount_to_invoice is Odoo's
-        own computed "remaining to invoice" value per line (net of VAT) —
-        it already nets out whatever's been invoiced so far, so a
-        partially-invoiced order only contributes its true remaining
-        value rather than double-counting against actual Revenue.
+        delivery ("fatture immediate"). Returns price_subtotal (net of VAT
+        and discounts), product_uom_qty and qty_invoiced per line so the
+        caller can compute the remaining un-invoiced value. Odoo's own
+        untaxed_amount_to_invoice is deliberately NOT used: for products
+        invoiced on delivered quantities it is 0 until the goods ship, which
+        would hide every confirmed, not-yet-delivered order from a forecast
+        that exists precisely to anticipate those deliveries.
         display_type=False excludes section/note pseudo-lines, which carry
         no monetary value. order_id is returned (not the order's own
         commitment_date, which search_read can't follow through a
@@ -275,7 +277,7 @@ class OdooClient:
         return self._search_read(
             "sale.order.line",
             domain,
-            ["order_id", "untaxed_amount_to_invoice"],
+            ["order_id", "price_subtotal", "product_uom_qty", "qty_invoiced"],
         )
 
     def order_commitment_dates(self, order_ids):
