@@ -569,15 +569,18 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
     new_orders_today = mtd_count(confirmed_order_dates, today)
     new_orders_yesterday = mtd_count(confirmed_order_dates, yesterday)
 
-    # Quotes = sale orders not yet confirmed (state draft/sent — see
-    # _order_status), by value rather than count, raised this month so far.
+    # Quotes raised = every sale order CREATED this month so far, whatever its
+    # state now (still open, converted into an order, or cancelled), by value
+    # rather than count. Dated by create_date because date_order is overwritten
+    # at confirmation — see OdooClient.quotes_raised.
+    quotes_this_month = [
+        (_date_part(q["create_date"]), float(q["amount_total"]))
+        for q in odoo.quotes_raised(from_date=month_start.isoformat())
+        if q.get("create_date")
+    ]
+
     def quotes_value(as_of):
-        if as_of < month_start:
-            return 0.0
-        return sum(
-            o["amount_total"] for o in orders
-            if o["state"] in ("draft", "sent") and month_start <= o["order_date"] <= as_of
-        )
+        return mtd_sum(quotes_this_month, as_of)
 
     quotes_raised_mtd = quotes_value(today)
     quotes_raised_mtd_yesterday = quotes_value(yesterday)
@@ -821,9 +824,9 @@ def build(odoo, bank_journal_id, starting_balance_amount, starting_balance_date,
             "are excluded from the forecast rather than guessed at: " + "; ".join(po_payment_issues)
         )
     caveats.append(
-        "Quotes Raised 'yesterday' uses each order's CURRENT state, not its state as of yesterday — a "
-        "quote raised yesterday but already confirmed into a sale order by today would drop out of both "
-        "figures rather than staying counted in yesterday's."
+        "Quotes Raised (MTD) counts every sale order created this month (by creation date), whether it is "
+        "still an open quote, has since been confirmed into an order, or was cancelled — so it only ever "
+        "grows through the month, and 'yesterday' is a true like-for-like comparison."
     )
     caveats.append(
         "New Orders (MTD) and Sales Won (MTD) count only confirmed sale orders (state 'sale'/'done' — "
