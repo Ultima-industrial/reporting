@@ -243,7 +243,8 @@
       </div>
 
       <div class="chart-block">
-        <p class="block-title">Expected invoiced revenue &mdash; next 6 months, by delivery date</p>
+        <p class="block-title">Invoiced &amp; expected revenue &mdash; this month + next 5, by delivery date</p>
+        <div class="status-legend" id="expectedInvoicedLegend" style="margin:0 0 .4rem;"></div>
         <svg id="expectedInvoicedChart" viewBox="0 0 560 170"></svg>
       </div>
 
@@ -327,7 +328,7 @@
     <p id="acontoCaveat"></p>
     <p><b>Immediate Payment import POs</b> (supplier based in a listed country, see config/import_vat_rules.yaml) are anchored 7 days before expected arrival rather than on the arrival date itself, since these suppliers require payment before dispatch. A domestic Immediate Payment PO still anchors on the expected arrival date.</p>
     <p><b>Confirmed orders awaiting invoice</b> shows an estimated payment date computed from each purchase order's payment term ("termini di pagamento") plus its expected arrival date &mdash; an approximation until a real vendor bill exists, worth sanity-checking against a few real POs. Only the REMAINING un-invoiced balance is estimated here: if a PO has been partially invoiced (e.g. a "fattura acconto" already received), that invoice's own due date already shows under Open Vendor Bills, and only the still-unbilled remainder is estimated, using the same payment-term proportions applied to that smaller balance. A PO (or its remaining balance) missing a payment term, an expected arrival date, or using a payment-term schedule not yet supported is excluded here and flagged instead (see "Needs attention" above if any exist).</p>
-    <p><b>Expected invoiced revenue by month</b> assumes deliveries land on their promised date (commitment_date, "Data Consegna") and are invoiced immediately ("fatture immediate") &mdash; a delayed delivery shows in the month it was originally promised, not when it actually ships. Uses each order line's full value (net of VAT) minus what's already been invoiced, so undelivered orders count in full and a partially-invoiced order only contributes what's left to invoice.</p>
+    <p><b>Invoiced &amp; expected revenue by month</b>: this month's bar stacks revenue already invoiced (green, same figure as Revenue MTD) under what is still expected to ship and be invoiced this month (teal); later months show expected only. The expected part assumes deliveries land on their promised date (commitment_date, "Data Consegna") and are invoiced immediately ("fatture immediate") &mdash; a delayed delivery shows in the month it was originally promised, not when it actually ships. Uses each order line's full value (net of VAT) minus what's already been invoiced, so undelivered orders count in full and a partially-invoiced order only contributes what's left to invoice.</p>
     <p><b>Quotes raised (MTD)</b> counts every sale order created this month (by creation date), whether it is still an open quote, has since been confirmed into an order, or was cancelled &mdash; so it only ever grows through the month, and yesterday is a true like-for-like comparison.</p>
     <p><b>New Orders (MTD)</b> and <b>Sales Won (MTD)</b> count only confirmed sale orders (Odoo state &ldquo;Ordine di vendita&rdquo;) &mdash; draft/sent quotations (&ldquo;Preventivo&rdquo;) are excluded. Sales Won is order value (net of VAT), by order date, not invoiced revenue, so it can differ from Revenue (MTD, invoiced).</p>
     <p>Source: Odoo (sale orders, bank feed, open invoices/bills), read-only. Ask for a refresh any time to pull a new snapshot.</p>
@@ -587,10 +588,21 @@ document.getElementById('forecastCaption').innerHTML =
   if (!data.length) { svg.closest('.chart-block').remove(); return; }
   const w = 560, h = 170, topPad = 24, bottomPad = 20, sidePad = 28;
   const chartH = h - topPad - bottomPad;
-  const max = Math.max(...data.map(d=>d[1]), 1);
+  // Month 0 (the current month) also shows what's already been invoiced so
+  // far, stacked under the still-expected amount; later months are expected only.
+  const invoicedSoFar = Number(DATA.kpis.revenue_today) || 0;
+  const invoicedFor = i => (i === 0 ? invoicedSoFar : 0);
+  const max = Math.max(...data.map((d, i) => d[1] + invoicedFor(i)), 1);
   const groupW = (w - sidePad*2) / data.length;
   const barW = groupW * 0.55;
   const fmtShort = n => Math.abs(n) >= 1000 ? '€' + (n/1000).toFixed(1) + 'k' : '€' + n.toFixed(0);
+
+  const legend = document.getElementById('expectedInvoicedLegend');
+  if (legend) {
+    legend.innerHTML =
+      `<span class="item"><span class="sw" style="background:var(--good)"></span>Invoiced this month <b>${fmtMoney(invoicedSoFar)}</b></span>` +
+      `<span class="item"><span class="sw" style="background:var(--accent)"></span>Expected to ship &amp; invoice</span>`;
+  }
 
   const gridLines = [0.25, 0.5, 0.75].map(f => {
     const gy = topPad + chartH*(1-f);
@@ -600,12 +612,17 @@ document.getElementById('forecastCaption').innerHTML =
   let bars = '';
   data.forEach(([iso, amt], i) => {
     const gx = sidePad + i*groupW;
-    const barH = (amt/max) * chartH;
-    const barTop = topPad + chartH - barH;
+    const inv = invoicedFor(i);
+    const total = amt + inv;
+    const expH = (amt/max) * chartH;
+    const invH = (inv/max) * chartH;
+    const barTop = topPad + chartH - expH - invH;
     const d = new Date(iso+'T00:00:00');
     const label = d.toLocaleDateString('en-GB', {month:'short'});
-    bars += `<rect x="${(gx+groupW/2-barW/2).toFixed(1)}" y="${barTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="2" fill="var(--accent)"/>`;
-    bars += `<text x="${(gx+groupW/2).toFixed(1)}" y="${(barTop-5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)" font-family="IBM Plex Mono, monospace">${fmtShort(amt)}</text>`;
+    const bx = (gx+groupW/2-barW/2).toFixed(1);
+    if (invH > 0) bars += `<rect x="${bx}" y="${(topPad+chartH-invH).toFixed(1)}" width="${barW.toFixed(1)}" height="${invH.toFixed(1)}" rx="2" fill="var(--good)"/>`;
+    if (expH > 0) bars += `<rect x="${bx}" y="${barTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${expH.toFixed(1)}" rx="2" fill="var(--accent)"/>`;
+    bars += `<text x="${(gx+groupW/2).toFixed(1)}" y="${(barTop-5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text)" font-family="IBM Plex Mono, monospace">${fmtShort(total)}</text>`;
     bars += `<text x="${(gx+groupW/2).toFixed(1)}" y="${h-6}" text-anchor="middle" font-size="10.5" fill="var(--text-faint)" font-family="IBM Plex Sans, sans-serif">${label}</text>`;
   });
   svg.innerHTML = `${gridLines}<line x1="${sidePad}" y1="${topPad+chartH}" x2="${w-sidePad}" y2="${topPad+chartH}" stroke="var(--border)"/>${bars}`;
