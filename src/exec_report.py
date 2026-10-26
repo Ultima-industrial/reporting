@@ -70,7 +70,7 @@ def _key_figures_rows(data):
         ["New Orders (MTD)", s["new_orders_today"], s["new_orders_yesterday"],
          s["new_orders_today"] - s["new_orders_yesterday"], "Sale orders created this month so far", "int"],
         ["Quotes Raised (MTD, value)", s["quotes_raised_mtd"], s["quotes_raised_mtd_yesterday"],
-         s["quotes_raised_mtd"] - s["quotes_raised_mtd_yesterday"], "Draft/sent sale orders, by value, not yet confirmed (see caveats)", "money"],
+         s["quotes_raised_mtd"] - s["quotes_raised_mtd_yesterday"], "All quotes created this month, by value, incl. converted and cancelled (see caveats)", "money"],
         ["Delayed Orders", len(s["delayed_orders"]), s["delayed_orders_count_yesterday"],
          len(s["delayed_orders"]) - s["delayed_orders_count_yesterday"], "Past commitment date, not yet fulfilled", "int"],
         ["Cash Flow (MTD, net)", f["cash_flow_today"], f["cash_flow_yesterday"],
