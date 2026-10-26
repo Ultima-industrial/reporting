@@ -252,6 +252,18 @@ class OdooClient:
              "invoice_status", "delivery_status", "commitment_date"],
         )
 
+    def quotes_raised(self, from_date):
+        """Every sale order created on/after from_date, in ANY state —
+        still-open quotes, quotes since confirmed into orders, and cancelled
+        ones. Dated by create_date, not date_order: Odoo overwrites date_order
+        with the confirmation time when a quote becomes an order, which would
+        move a converted quote into the wrong day or month."""
+        return self._search_read(
+            "sale.order",
+            [["create_date", ">=", from_date]],
+            ["name", "amount_total", "state", "create_date"],
+        )
+
     def confirmed_order_lines_to_invoice_by_delivery_date(self, start_date, end_date):
         """Product lines of confirmed sale orders (state 'sale'/'done') with
         a promised delivery date (commitment_date, "Data Consegna" in the
