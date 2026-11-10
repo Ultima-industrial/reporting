@@ -45,28 +45,52 @@ class OdooClient:
             [domain, fields],
         )
 
-    def _open_moves(self, move_type, fields):
-        records = self._search_read(
-            "account.move",
+    def _open_instalments(self, move_type, account_type, sign):
+        """Open receivable/payable items, one record per OPEN INSTALMENT,
+        minus any confirmed-paid-but-unreconciled overrides.
+
+        Read from the journal items, not the invoice header: when a payment
+        term is split (e.g. 50% upfront, 50% later) the header's
+        invoice_date_due is only the LAST instalment's date, and
+        amount_residual is the whole balance — so an overdue first instalment
+        would sit hidden as "not yet due" until the final date. Each journal
+        item carries its own date_maturity and residual instead. A document
+        with two open instalments therefore appears as two records sharing the
+        same name. sign flips payable items (stored as negative residuals) to
+        the positive amounts the rest of the code expects."""
+        lines = self._search_read(
+            "account.move.line",
             [
-                ["move_type", "=", move_type],
-                ["state", "=", "posted"],
-                ["payment_state", "in", ["not_paid", "partial"]],
+                ["move_id.move_type", "=", move_type],
+                ["parent_state", "=", "posted"],
+                ["account_id.account_type", "=", account_type],
+                ["reconciled", "=", False],
+                ["amount_residual", "!=", 0],
             ],
-            fields,
+            ["move_id", "partner_id", "amount_residual", "date_maturity", "currency_id"],
         )
         excluded = _paid_override_names()
-        return [r for r in records if r["name"] not in excluded]
+        return [
+            {
+                "name": l["move_id"][1],
+                "partner_id": l["partner_id"],
+                "amount_residual": sign * l["amount_residual"],
+                "invoice_date_due": l["date_maturity"],
+                "currency_id": l["currency_id"],
+            }
+            for l in lines
+            if l["move_id"][1] not in excluded
+        ]
 
     def open_vendor_bills(self):
-        """Posted, unpaid/partially-paid vendor bills (money going out),
-        minus any confirmed-paid-but-unreconciled overrides."""
-        return self._open_moves("in_invoice", ["name", "partner_id", "amount_residual", "invoice_date_due", "currency_id"])
+        """Open vendor-bill payables (money going out), per instalment — see
+        _open_instalments."""
+        return self._open_instalments("in_invoice", "liability_payable", -1)
 
     def open_customer_invoices(self):
-        """Posted, unpaid/partially-paid customer invoices (money coming in),
-        minus any confirmed-paid-but-unreconciled overrides."""
-        return self._open_moves("out_invoice", ["name", "partner_id", "amount_residual", "invoice_date_due", "currency_id"])
+        """Open customer-invoice receivables (money coming in), per
+        instalment — see _open_instalments."""
+        return self._open_instalments("out_invoice", "asset_receivable", 1)
 
     def bank_journals(self):
         """Lists bank journals, including their sync source, to identify which
